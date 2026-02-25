@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for exercise in \"Barbell Forearm Extension\" \"Cable Behind The Back Wrist Curl\" \"Cable EZ Bar Upright Row\" \"Cable Lateral Raise\" \"Cable Straight Bar Curl\" \"Cable Straight Bar Tricep Pushdown\" \"Hip Adduction\" \"Lean-over Dumbbell Shrug\" \"Machine Preacher Curl\" \"Overhead Dumbbell Tricep Extension\" \"Plate Wrist Curl\" \"Reverse Pec Deck Rear Delt Fly\" \"Rope Straight-arm Lat Pullthrough\" \"Seated Dumbbell Hammer Curl\" \"Single-Arm Smith Machine Shrug\" \"Single-Arm Supinated Tricep Cable Pushdown\" \"Weighted Decline Sit Up HOLDS\" \"Weighted Decline Sit-up\")",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(curl:*)",
+      "Bash(openssl dgst:*)",
+      "Bash(openssl base64:*)",
+      "Bash(open:*)",
+      "Bash(netlify --version:*)",
+      "Bash(gh auth:*)",
+      "Bash(npm install:*)",
+      "Bash(netlify login:*)",
+      "Bash(netlify status:*)",
+      "Bash(netlify sites:list:*)",
+      "Bash(netlify link:*)",
+      "Bash(netlify deploy:*)",
+      "Bash(surge:*)",
+      "Bash(pip3 install openpyxl -q)",
+      "Bash(python3 -c \":*)"
+    ]
+  }
+}

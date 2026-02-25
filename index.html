@@ -1,0 +1,2907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SH90">
+  <meta name="theme-color" content="#0ea5e9">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; manifest-src data:;">
+  <title>Superhuman90</title>
+
+  <!-- PWA Manifest (inline data URI) -->
+  <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlN1cGVyaHVtYW45MCIsCiAgInNob3J0X25hbWUiOiAiU0g5MCIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjZjBmNGY4IiwKICAidGhlbWVfY29sb3IiOiAiIzBlYTVlOSIsCiAgImljb25zIjogW10KfQ==">
+
+  <!-- Preload fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    textarea { font-family: 'DM Sans', sans-serif; }
+    .safe-top { padding-top: 44px; padding-top: env(safe-area-inset-top, 44px); }
+  </style>
+
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.9/babel.min.js" integrity="sha384-pKNXKj7jF9BNMkQyGWg5YLfoPyqBa/gf7wjTSoTGQlwxbZB+sabJuKyOHR6JQvTd" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ── Local date helper (timezone-safe) ──
+    const toLocalDateStr = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    // ── localStorage helpers ──
+    const sanitizeString = (val, maxLen = 500) =>
+      typeof val === "string" ? val.slice(0, maxLen) : "";
+    const sanitizeNumber = (val, min = 0, max = 9999) => {
+      const n = Number(val);
+      return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : min;
+    };
+    const loadState = (key, fallback) => {
+      try {
+        const saved = localStorage.getItem("sh90_" + key);
+        if (!saved) return fallback;
+        const parsed = JSON.parse(saved);
+        if (fallback !== null && typeof parsed !== typeof fallback) return fallback;
+        if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+        return parsed;
+      } catch { return fallback; }
+    };
+    const loadProfile = () => {
+      const raw = loadState("profile", { name: "", age: "", height: "", goalWeight: "", notes: "" });
+      return {
+        name: sanitizeString(raw.name, 100),
+        age: sanitizeString(raw.age, 3),
+        height: sanitizeString(raw.height, 10),
+        goalWeight: sanitizeString(raw.goalWeight, 10),
+        notes: sanitizeString(raw.notes, 1000),
+      };
+    };
+    const saveState = (key, value) => {
+      try { localStorage.setItem("sh90_" + key, JSON.stringify(value)); } catch {}
+    };
+
+
+// ── Theme System ──
+const THEMES = {
+  midnight: {
+    name: "Midnight",
+    bg: "#0a0a0f", card: "#13131a", cardAlt: "#1a1a24",
+    accent: "#6366f1", accentGlow: "rgba(99,102,241,0.15)",
+    text: "#e4e4e7", textDim: "#71717a", textMuted: "#3f3f46",
+    success: "#22c55e", danger: "#ef4444", warning: "#f59e0b",
+    border: "#27272a", borderLight: "#1e1e26",
+    gradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+  },
+  obsidian: {
+    name: "Obsidian",
+    bg: "#0c0c0c", card: "#161616", cardAlt: "#1c1c1c",
+    accent: "#f97316", accentGlow: "rgba(249,115,22,0.12)",
+    text: "#fafafa", textDim: "#737373", textMuted: "#404040",
+    success: "#4ade80", danger: "#f87171", warning: "#fbbf24",
+    border: "#262626", borderLight: "#1a1a1a",
+    gradient: "linear-gradient(135deg, #f97316, #fb923c)",
+  },
+  forest: {
+    name: "Forest",
+    bg: "#060d08", card: "#0d1a10", cardAlt: "#122216",
+    accent: "#4ade80", accentGlow: "rgba(74,222,128,0.1)",
+    text: "#e8f5e9", textDim: "#6b8f71", textMuted: "#2d4a32",
+    success: "#4ade80", danger: "#ef4444", warning: "#fbbf24",
+    border: "#1a3a1f", borderLight: "#142e17",
+    gradient: "linear-gradient(135deg, #4ade80, #22c55e)",
+  },
+  arctic: {
+    name: "Arctic",
+    bg: "#f8fafc", card: "#ffffff", cardAlt: "#f1f5f9",
+    accent: "#0ea5e9", accentGlow: "rgba(14,165,233,0.08)",
+    text: "#0f172a", textDim: "#64748b", textMuted: "#cbd5e1",
+    success: "#16a34a", danger: "#dc2626", warning: "#d97706",
+    border: "#e2e8f0", borderLight: "#f1f5f9",
+    gradient: "linear-gradient(135deg, #0ea5e9, #38bdf8)",
+  },
+  ember: {
+    name: "Ember",
+    bg: "#0f0806", card: "#1a100c", cardAlt: "#231610",
+    accent: "#ef4444", accentGlow: "rgba(239,68,68,0.12)",
+    text: "#fef2f2", textDim: "#a8706a", textMuted: "#4a2520",
+    success: "#4ade80", danger: "#ef4444", warning: "#fbbf24",
+    border: "#3b1a14", borderLight: "#2a1410",
+    gradient: "linear-gradient(135deg, #ef4444, #f97316)",
+  },
+};
+
+// ── Exercise Alternatives DB ──
+const ALTERNATIVES = {
+  // LEGS
+  "Smith Machine Squat": ["Leg Press", "Hack Squat", "Goblet Squat", "Barbell Back Squat", "H: Goblet Squat", "BW: Pistol Squat / Deep Bodyweight Squat"],
+  "Standing Calf Raise": ["Seated Calf Raise", "Leg Press Calf Raise", "Smith Machine Calf Raise", "H: Single-Leg Calf Raise (on step)", "BW: Single-Leg Calf Raise (on step)"],
+  "Weighted Hip Extension": ["Hip Thrust", "Glute Bridge", "Cable Pull-through", "H: Weighted / Bodyweight Hip Thrust", "BW: Single-Leg Glute Bridge"],
+  "Single-Leg Leg Extension": ["Leg Extension (Both)", "Sissy Squat", "Spanish Squat", "H: Bulgarian Split Squat", "BW: Sissy Squat"],
+  "Prone Hamstring Curl": ["Seated Leg Curl", "Nordic Curl", "Swiss Ball Curl", "H: Dumbbell Romanian Deadlift", "BW: Nordic Curl"],
+  "Hip Abduction": ["Banded Side Walk", "Cable Hip Abduction", "Side-lying Leg Raise", "H: Single-Leg Dumbbell Romanian Deadlift", "BW: Side-lying Leg Raise"],
+  "Cable Ab Crunch": ["Hanging Leg Raise", "Decline Sit-up", "Ab Rollout", "H: Weighted / Bodyweight Russian Twists", "BW: Bicycle Crunch"],
+  "Seated Calf Raise": ["Standing Calf Raise", "Donkey Calf Raise", "Single-leg Calf Raise", "H: Single-Leg Calf Raise (on step)", "BW: Seated Bodyweight Calf Raise (on step)"],
+  "Smith Machine Romanian Deadlift": ["Barbell RDL", "Dumbbell RDL", "Single-leg RDL", "H: Dumbbell Romanian Deadlift", "BW: Single-Leg Romanian Deadlift"],
+  "Smith Machine Reverse Lunge": ["Dumbbell Reverse Lunge", "Walking Lunge", "Step-up", "H: Bulgarian Split Squat", "BW: Bodyweight Reverse Lunge"],
+  "Seated Leg Curl": ["Prone Hamstring Curl", "Nordic Curl", "Band Leg Curl", "H: Single-Leg Dumbbell Romanian Deadlift", "BW: Sliding Leg Curl (towel on floor)"],
+  "Leg Extension": ["Single-Leg Extension", "Sissy Squat", "Wall Sit", "H: Goblet Squat", "BW: Wall Sit"],
+  "Hip Adduction": ["Banded Adduction", "Copenhagen Plank", "Cable Hip Adduction", "H: Weighted / Bodyweight Hip Thrust", "BW: Copenhagen Plank"],
+  "Weighted Decline Sit Up HOLDS": ["Plank Hold", "Weighted Plank", "L-Sit Hold", "H: Plank / Weighted Plank", "BW: Plank Hold"],
+  "Weighted Decline Sit-up": ["Cable Ab Crunch", "Weighted Crunch", "Hanging Leg Raise", "H: Weighted / Bodyweight Russian Twists", "BW: V-Up"],
+  "Bulgarian Split Squat": ["Lunge", "Step-up", "Single-leg Press", "BW: Bodyweight Bulgarian Split Squat"],
+  "Walking / Standing Dumbbell Lunge": ["Reverse Lunge", "Bulgarian Split Squat", "Step-up", "H: Bulgarian Split Squat", "BW: Bodyweight Walking Lunge"],
+  // TORSO
+  "Incline Smith Machine Bench Press": ["Incline Dumbbell Press", "Incline Barbell Press", "Incline Machine Press", "H: Feet On Bench Pushup (Weighted Vest)", "BW: Decline Push-up (feet elevated)"],
+  "Wide-grip Lat Pulldown": ["Close-grip Lat Pulldown", "Neutral Grip Pulldown", "Assisted Pull-up", "H: Weighted / Bodyweight Pullup", "BW: Wide-grip Pull-up / Door Pull-up"],
+  "Weighted Dip / Assisted Dip": ["Tricep Dips (Bench)", "Machine Dip", "Close-grip Push-up", "H: Weighted / Bodyweight Dip", "BW: Chair Dips"],
+  "Single-Arm Cable Row": ["Dumbbell Row", "Machine Row", "Chest-supported Row", "H: Dumbbell Row", "BW: Single-Arm Inverted Row"],
+  "Machine Chest Fly": ["Cable Fly", "Dumbbell Fly", "Pec Deck", "H: Dumbbell Fly", "BW: Wide Push-up"],
+  "Smith Machine Shrug": ["Dumbbell Shrug", "Barbell Shrug", "Cable Shrug", "H: Dumbbell Shrug", "BW: Prone Y-Raise"],
+  "Plate Front Raise": ["Dumbbell Front Raise", "Cable Front Raise", "Barbell Front Raise", "H: Dumbbell Front Raise", "BW: Pike Push-up"],
+  "Strict Press": ["Dumbbell Shoulder Press", "Machine Shoulder Press", "Arnold Press", "H: Feet On Bench Pushup (Weighted Vest)", "BW: Handstand Push-up / Pike Push-up"],
+  "Wide-grip row": ["T-Bar Row", "Pendlay Row", "Cable Row", "H: Dumbbell Row", "BW: Inverted Row (wide grip)"],
+  "Machine Press": ["Dumbbell Bench Press", "Push-up Variations", "Floor Press", "H: Weighted / Bodyweight Dip", "BW: Push-up"],
+  "Single-Arm Lat Pulldown": ["Single-Arm Cable Row", "Single-Arm Dumbbell Row", "H: Weighted / Bodyweight Pullup", "BW: Archer Pull-up"],
+  "Incline Dumbbell Fly": ["Incline Cable Fly", "Incline Machine Fly", "Svend Press", "H: Dumbbell Fly", "BW: Decline Wide Push-up"],
+  "Weighted / Assisted Pull-up": ["Lat Pulldown", "Band-assisted Pull-up", "Negative Pull-ups", "H: Weighted / Bodyweight Pullup", "BW: Negative Pull-up"],
+  "Decline Chest Press": ["Decline Dumbbell Press", "Dip (Chest-focused)", "Cable Decline Press", "H: Weighted / Bodyweight Dip", "BW: Dip (chest lean forward)"],
+  "Underhand Cable / Machine Row": ["Underhand Barbell Row", "Underhand Dumbbell Row", "H: Dumbbell Row", "BW: Underhand Inverted Row"],
+  "Incline Dumbbell Bench Press": ["Incline Smith Press", "Incline Cable Press", "H: Feet On Bench Pushup (Weighted Vest)", "BW: Decline Push-up"],
+  "Neutral Grip Lat Pulldown": ["Chin-up", "Close-grip Lat Pulldown", "H: Weighted / Bodyweight Pullup", "BW: Chin-up"],
+  "Dumbbell Fly": ["Cable Fly", "Machine Fly", "Pec Deck", "BW: Wide Push-up"],
+  "Rope Straight-arm Lat Pullthrough": ["Straight-arm Cable Pulldown", "Dumbbell Pullover", "Band Pullover", "H: Dumbbell Row", "BW: Superman Pull-down"],
+  "Lean-over Dumbbell Shrug": ["Barbell Shrug", "Smith Machine Shrug", "Cable Shrug", "H: Dumbbell Shrug", "BW: Prone Y-Raise"],
+  "Single-Arm Smith Machine Shrug": ["Single-Arm Dumbbell Shrug", "Single-Arm Cable Shrug", "Barbell Shrug", "H: Dumbbell Shrug", "BW: Prone Y-Raise (single arm)"],
+  // ARMS
+  "Smith Machine Close-Grip Bench Press": ["Close-grip Dumbbell Press", "EZ Bar Skull Crusher", "Diamond Push-up", "H: Dumbbell Skullcrusher", "BW: Diamond Push-up"],
+  "Barbell Bicep Curl": ["EZ Bar Curl", "Dumbbell Curl", "Cable Curl", "H: Dumbbell Bicep Curl", "BW: Chin-up"],
+  "Cable Rope Pushdown": ["Cable Bar Pushdown", "Overhead Rope Extension", "Dumbbell Kickback", "H: Single-Arm Dumbbell Overhead Extension", "BW: Bench Dip"],
+  "Dumbbell Hammer Curl": ["Cable Rope Curl", "Cross-body Curl", "Reverse Curl", "BW: Neutral-grip Chin-up"],
+  "Single-Arm Cable Tricep Pushdown": ["Dumbbell Kickback", "Overhead Cable Extension", "H: Single-Arm Dumbbell Overhead Extension", "BW: Single-Arm Bench Dip"],
+  "Dumbbell Lateral Raise": ["Cable Lateral Raise", "Machine Lateral Raise", "Leaning Lateral Raise", "BW: Side Plank Arm Raise"],
+  "Single-Arm Cable Curl": ["Concentration Curl", "Preacher Curl", "Spider Curl", "H: Dumbbell Bicep Curl", "BW: Single-Arm Chin-up Negative"],
+  "Bent-Over Cable Rear Delt Fly": ["Reverse Pec Deck", "Face Pull", "Dumbbell Rear Delt Fly", "H: Bent-Over Dumbbell Rear Delt Fly", "BW: Prone Y-T-W Raise"],
+  "Plate Wrist Curl": ["Dumbbell Wrist Curl", "Barbell Wrist Curl", "Cable Wrist Curl", "H: Dumbbell Hammer Curl", "BW: Fingertip Push-up"],
+  "Barbell Forearm Extension": ["Reverse Wrist Curl (Dumbbell)", "Reverse Cable Curl", "Wrist Roller", "H: Dumbbell Hammer Curl", "BW: Knuckle Push-up"],
+  "Cable Straight Bar Tricep Pushdown": ["Cable Rope Pushdown", "V-Bar Pushdown", "EZ Bar Pushdown", "H: Dumbbell Skullcrusher", "BW: Diamond Push-up"],
+  "Cable Straight Bar Curl": ["EZ Bar Curl", "Barbell Bicep Curl", "Dumbbell Curl", "H: Dumbbell Hammer Curl", "BW: Chin-up"],
+  "Overhead Dumbbell Tricep Extension": ["Overhead Cable Extension", "EZ Bar Skull Crusher", "French Press", "H: Single-Arm Dumbbell Overhead Extension", "BW: Bodyweight Skull Crusher (on bar/edge)"],
+  "Seated Dumbbell Hammer Curl": ["Standing Hammer Curl", "Cable Rope Curl", "Cross-body Hammer Curl", "H: Dumbbell Hammer Curl", "BW: Neutral-grip Chin-up"],
+  "Single-Arm Supinated Tricep Cable Pushdown": ["Single-Arm Cable Tricep Pushdown", "Dumbbell Kickback", "Overhead Single-Arm Extension", "H: Single-Arm Dumbbell Overhead Extension", "BW: Single-Arm Diamond Push-up"],
+  "Cable Lateral Raise": ["Dumbbell Lateral Raise", "Machine Lateral Raise", "Band Lateral Raise", "H: Dumbbell Lateral Raise", "BW: Side Plank Arm Raise"],
+  "Machine Preacher Curl": ["Dumbbell Preacher Curl", "EZ Bar Preacher Curl", "Spider Curl", "H: Dumbbell Bicep Curl", "BW: Chin-up (slow negative)"],
+  "Cable EZ Bar Upright Row": ["Dumbbell Upright Row", "Barbell Upright Row", "Cable Rope Upright Row", "H: Dumbbell Lateral Raise", "BW: Pike Push-up"],
+  "Cable Behind The Back Wrist Curl": ["Barbell Wrist Curl", "Dumbbell Wrist Curl", "Plate Wrist Curl", "H: Dumbbell Hammer Curl", "BW: Fingertip Push-up"],
+  "Reverse Pec Deck Rear Delt Fly": ["Face Pull", "Bent-Over Dumbbell Fly", "Cable Rear Delt Fly", "H: Bent-Over Dumbbell Rear Delt Fly", "BW: Prone Y-T-W Raise"],
+};
+
+// ── Workout Data (Weeks 1-12, all from spreadsheet) ──
+const WORKOUT_DATA = {
+  1:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:10,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:60,notes:null},{name:"Smith Machine Squat",sets:2,reps:"4-6, 6-8",result:95,notes:"work up to very difficult weight"},{name:"Weighted Hip Extension",sets:2,reps:"6-8",result:null,notes:null},{name:"Single-Leg Leg Extension",sets:2,reps:"8-12",result:70,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:2,reps:"8-12",result:160,notes:null},{name:"Hip Abduction",sets:2,reps:"8-12",result:110,notes:null},{name:"Cable Ab Crunch",sets:2,reps:"15-20",result:110,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:2,reps:"4-6, 6-8",result:70,notes:"work up to very difficult weight"},{name:"Wide-grip Lat Pulldown",sets:2,reps:"8-12",result:115,notes:null},{name:"Weighted Dip / Assisted Dip",sets:2,reps:"8-12",result:35,notes:null},{name:"Single-Arm Cable Row",sets:2,reps:"8-12",result:null,notes:null},{name:"Machine Chest Fly",sets:2,reps:"8-12",result:null,notes:null},{name:"Smith Machine Shrug",sets:3,reps:"6-10",result:null,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:3,reps:"10-15",result:null,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:2,reps:"6-8",result:85,notes:null},{name:"Barbell Bicep Curl",sets:2,reps:"6-8",result:22,notes:null},{name:"Cable Rope Pushdown",sets:2,reps:"8-12",result:40,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:2,reps:"8-12",result:20,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:2,reps:"8-12",result:20.1,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:10,notes:null},{name:"Single-Arm Cable Curl",sets:2,reps:"8-12",result:20,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:10,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:10,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:null,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:90,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:2,reps:"4-6, 6-8",result:null,notes:"work up to very difficult weight"},{name:"Smith Machine Reverse Lunge",sets:2,reps:"6-8",result:26,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:2,reps:"8-12",result:70,notes:null},{name:"Leg Extension",sets:2,reps:"8-12",result:120,notes:null},{name:"Hip Adduction",sets:2,reps:"8-12",result:null,notes:null},{name:"Weighted Decline Sit-up",sets:2,reps:"8-12",result:10,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:2,reps:"4-6, 6-8",result:70,notes:"work up to very difficult weight"},{name:"Wide-grip row",sets:3,reps:"6-8",result:88,notes:"end with partials"},{name:"Machine Press",sets:2,reps:"8-12",result:25,notes:null},{name:"Single-Arm Lat Pulldown",sets:2,reps:"8-12",result:55,notes:null},{name:"Incline Dumbbell Fly",sets:2,reps:"8-12",result:15,notes:null},{name:"Rope Straight-arm Lat Pullthrough",sets:1,reps:"10-15",result:38,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:3,reps:"8-12",result:null,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable Straight Bar Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:2,reps:"6-8",result:null,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:2,reps:"6-8",result:22.5,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:2,reps:"8-12",result:16.5,notes:null},{name:"Cable Lateral Raise",sets:2,reps:"8-12",result:11,notes:null},{name:"Machine Preacher Curl",sets:2,reps:"8-12",result:25,notes:null},{name:"Cable EZ Bar Upright Row",sets:2,reps:"10-15",result:88,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:null,notes:null},{name:"Barbell Forearm Extension",sets:2,reps:"10-15",result:20,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:3,reps:"8-12",result:60,notes:null}]}},
+  2:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:10,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:40,notes:null},{name:"Smith Machine Squat",sets:2,reps:"4-6, 6-8",result:135,notes:"beat last weeks reps or weight"},{name:"Weighted Hip Extension",sets:2,reps:"6-8",result:80,notes:null},{name:"Single-Leg Leg Extension",sets:2,reps:"8-12",result:140,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:2,reps:"8-12",result:135,notes:null},{name:"Hip Abduction",sets:2,reps:"8-12",result:140,notes:null},{name:"Cable Ab Crunch",sets:2,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:2,reps:"4-6, 6-8",result:95,notes:"beat last weeks reps or weight"},{name:"Wide-grip Lat Pulldown",sets:2,reps:"8-10",result:90,notes:null},{name:"Weighted Dip / Assisted Dip",sets:2,reps:"8-10",result:null,notes:null},{name:"Single-Arm Cable Row",sets:2,reps:"8-12",result:55,notes:null},{name:"Machine Chest Fly",sets:2,reps:"8-12",result:15,notes:null},{name:"Smith Machine Shrug",sets:3,reps:"6-10",result:45,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:3,reps:"10-15",result:25,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:2,reps:"6-8",result:45,notes:null},{name:"Barbell Bicep Curl",sets:2,reps:"6-8",result:40,notes:null},{name:"Cable Rope Pushdown",sets:2,reps:"8-12",result:35,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:2,reps:"8-12",result:15,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:2,reps:"8-12",result:20,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:10,notes:null},{name:"Single-Arm Cable Curl",sets:2,reps:"8-12",result:15,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:10,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:5,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:null,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:50,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:2,reps:"4-6, 6-8",result:185,notes:"beat last weeks reps or weight"},{name:"Smith Machine Reverse Lunge",sets:2,reps:"6-8",result:45,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:2,reps:"8-12",result:80,notes:null},{name:"Leg Extension",sets:2,reps:"8-12",result:105,notes:null},{name:"Hip Adduction",sets:2,reps:"8-12",result:120,notes:null},{name:"Weighted Decline Sit-up",sets:2,reps:"8-12",result:10,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:2,reps:"4-6, 6-8",result:145,notes:"beat last weeks reps or weight"},{name:"Wide-grip row",sets:3,reps:"6-8",result:145,notes:"end with partials"},{name:"Machine Press",sets:2,reps:"8-12",result:90,notes:null},{name:"Single-Arm Lat Pulldown",sets:2,reps:"8-12",result:55,notes:null},{name:"Incline Dumbbell Fly",sets:2,reps:"8-12",result:60,notes:null},{name:"Rope Straight-arm Lat Pullthrough",sets:1,reps:"10-15",result:45,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:3,reps:"8-12",result:45,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:2,reps:"8-12",result:90,notes:null},{name:"Cable Straight Bar Curl",sets:2,reps:"8-12",result:70,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:2,reps:"6-8",result:null,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:2,reps:"6-8",result:20,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:2,reps:"8-12",result:20,notes:null},{name:"Cable Lateral Raise",sets:2,reps:"8-12",result:10,notes:null},{name:"Machine Preacher Curl",sets:2,reps:"8-12",result:35,notes:null},{name:"Cable EZ Bar Upright Row",sets:2,reps:"10-15",result:45,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:10,notes:null},{name:"Barbell Forearm Extension",sets:2,reps:"10-15",result:null,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:3,reps:"8-12",result:50,notes:null}]}},
+  3:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:45,notes:null},{name:"Smith Machine Squat",sets:2,reps:"4-6, 6-8",result:135,notes:"beat last weeks reps or weight"},{name:"Weighted Hip Extension",sets:2,reps:"6-8",result:null,notes:null},{name:"Single-Leg Leg Extension",sets:2,reps:"8-12",result:165,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:2,reps:"8-12",result:100,notes:null},{name:"Hip Abduction",sets:2,reps:"8-12",result:110,notes:null},{name:"Cable Ab Crunch",sets:2,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:2,reps:"4-6, 6-8",result:165,notes:"beat last weeks reps or weight"},{name:"Wide-grip Lat Pulldown",sets:2,reps:"6-8",result:121,notes:null},{name:"Weighted Dip / Assisted Dip",sets:2,reps:"8-12",result:null,notes:null},{name:"Single-Arm Cable Row",sets:2,reps:"8-12",result:44,notes:null},{name:"Machine Chest Fly",sets:2,reps:"8-12",result:90,notes:null},{name:"Smith Machine Shrug",sets:3,reps:"6-10",result:45,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:3,reps:"10-15",result:25,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:2,reps:"6-8",result:165,notes:null},{name:"Barbell Bicep Curl",sets:2,reps:"6-8",result:40,notes:null},{name:"Cable Rope Pushdown",sets:2,reps:"8-12",result:50,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:2,reps:"8-12",result:15,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:2,reps:"8-12",result:20,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:null,notes:null},{name:"Single-Arm Cable Curl",sets:2,reps:"8-12",result:15,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:80,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:null,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:25,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:2,reps:"4-6, 6-8",result:155,notes:"beat last weeks reps or weight"},{name:"Smith Machine Reverse Lunge",sets:2,reps:"6-8",result:65,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:2,reps:"8-12",result:110,notes:null},{name:"Leg Extension",sets:2,reps:"8-12",result:100,notes:null},{name:"Hip Adduction",sets:2,reps:"8-12",result:110,notes:null},{name:"Weighted Decline Sit-up",sets:2,reps:"8-12",result:null,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:2,reps:"4-6, 6-8",result:140,notes:"beat last weeks reps or weight"},{name:"Wide-grip row",sets:3,reps:"6-8",result:145,notes:"end with partials"},{name:"Machine Press",sets:2,reps:"8-12",result:165,notes:null},{name:"Single-Arm Lat Pulldown",sets:2,reps:"8-12",result:35,notes:null},{name:"Incline Dumbbell Fly",sets:2,reps:"8-12",result:70,notes:null},{name:"Rope Straight-arm Lat Pullthrough",sets:1,reps:"10-15",result:55,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:3,reps:"8-12",result:45,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:2,reps:"8-12",result:42,notes:null},{name:"Cable Straight Bar Curl",sets:2,reps:"8-12",result:42,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:2,reps:"6-8",result:15,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:2,reps:"6-8",result:25,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:2,reps:"8-12",result:17,notes:null},{name:"Cable Lateral Raise",sets:2,reps:"8-12",result:12,notes:null},{name:"Machine Preacher Curl",sets:2,reps:"8-12",result:17,notes:null},{name:"Cable EZ Bar Upright Row",sets:2,reps:"10-15",result:100,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:null,notes:null},{name:"Barbell Forearm Extension",sets:2,reps:"10-15",result:null,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:3,reps:"8-12",result:null,notes:null}]}},
+  4:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:45,notes:null},{name:"Smith Machine Squat",sets:2,reps:"4-6, 6-8",result:135,notes:"beat last weeks reps or weight"},{name:"Weighted Hip Extension",sets:2,reps:"6-8",result:25,notes:null},{name:"Single-Leg Leg Extension",sets:2,reps:"8-12",result:185,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:2,reps:"8-12",result:100,notes:null},{name:"Hip Abduction",sets:2,reps:"8-12",result:100,notes:null},{name:"Cable Ab Crunch",sets:2,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:2,reps:"4-6, 6-8",result:90,notes:"beat last weeks reps or weight"},{name:"Wide-grip Lat Pulldown",sets:2,reps:"6-8",result:147,notes:null},{name:"Weighted Dip / Assisted Dip",sets:2,reps:"8-12",result:null,notes:null},{name:"Single-Arm Cable Row",sets:2,reps:"8-12",result:77,notes:null},{name:"Machine Chest Fly",sets:2,reps:"8-12",result:15,notes:null},{name:"Smith Machine Shrug",sets:3,reps:"6-10",result:45,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:3,reps:"10-15",result:25,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:2,reps:"6-8",result:50,notes:null},{name:"Barbell Bicep Curl",sets:2,reps:"6-8",result:50,notes:null},{name:"Cable Rope Pushdown",sets:2,reps:"8-12",result:44,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:2,reps:"8-12",result:20,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:2,reps:"8-12",result:44,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:12,notes:null},{name:"Single-Arm Cable Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:null,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:null,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:55,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:2,reps:"4-6, 6-8",result:185,notes:"beat last weeks reps or weight"},{name:"Smith Machine Reverse Lunge",sets:2,reps:"6-8",result:95,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:2,reps:"8-12",result:180,notes:null},{name:"Leg Extension",sets:2,reps:"8-12",result:180,notes:null},{name:"Hip Adduction",sets:2,reps:"8-12",result:null,notes:null},{name:"Weighted Decline Sit-up",sets:2,reps:"8-12",result:null,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:2,reps:"4-6, 6-8",result:140,notes:"beat last weeks reps or weight"},{name:"Wide-grip row",sets:3,reps:"6-8",result:130,notes:"end with partials"},{name:"Machine Press",sets:2,reps:"8-12",result:165,notes:null},{name:"Single-Arm Lat Pulldown",sets:2,reps:"8-12",result:55,notes:null},{name:"Incline Dumbbell Fly",sets:2,reps:"8-12",result:25,notes:null},{name:"Rope Straight-arm Lat Pullthrough",sets:1,reps:"10-15",result:20,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:3,reps:"8-12",result:45,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:2,reps:"8-12",result:60,notes:null},{name:"Cable Straight Bar Curl",sets:2,reps:"8-12",result:30,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:2,reps:"6-8",result:30,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:2,reps:"6-8",result:20,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:2,reps:"8-12",result:30,notes:null},{name:"Cable Lateral Raise",sets:2,reps:"8-12",result:10,notes:null},{name:"Machine Preacher Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable EZ Bar Upright Row",sets:2,reps:"10-15",result:70,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:null,notes:null},{name:"Barbell Forearm Extension",sets:2,reps:"10-15",result:null,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:3,reps:"8-12",result:100,notes:null}]}},
+  5:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:45,notes:null},{name:"Smith Machine Squat",sets:2,reps:"4-6, 6-8",result:null,notes:"beat last weeks reps or weight"},{name:"Weighted Hip Extension",sets:2,reps:"6-8",result:45,notes:null},{name:"Bulgarian Split Squat",sets:2,reps:"8-12",result:null,notes:null},{name:"Prone Hamstring Curl",sets:2,reps:"8-12",result:110,notes:null},{name:"Hip Abduction",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable Ab Crunch",sets:2,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:2,reps:"4-6, 6-8",result:70,notes:"beat last weeks reps or weight"},{name:"Weighted / Assisted Pull-up",sets:2,reps:"6-8",result:185,notes:"failure + partials"},{name:"Decline Chest Press",sets:2,reps:"8-12",result:205,notes:null},{name:"Single-Arm Cable Row",sets:2,reps:"8-12",result:60,notes:null},{name:"Machine Chest Fly",sets:2,reps:"8-12",result:null,notes:null},{name:"Single-Arm Smith Machine Shrug",sets:3,reps:"8-12",result:45,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:3,reps:"10-15",result:25,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:2,reps:"6-8",result:70,notes:null},{name:"Barbell Bicep Curl",sets:2,reps:"6-8",result:60,notes:null},{name:"Cable Rope Pushdown",sets:2,reps:"8-12",result:60,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:2,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:2,reps:"8-12",result:22,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:11,notes:"failure + cheat reps"},{name:"Single-Arm Cable Curl",sets:2,reps:"8-12",result:22,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:11,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:22,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:22,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:2,reps:"4-6, 6-8",result:null,notes:"beat last weeks reps or weight"},{name:"Walking / Standing Dumbbell Lunge",sets:2,reps:"6-8",result:null,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Leg Extension",sets:2,reps:"8-12",result:null,notes:null},{name:"Hip Adduction",sets:2,reps:"8-12",result:null,notes:null},{name:"Weighted Decline Sit-up",sets:2,reps:"8-12",result:null,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:2,reps:"4-6, 6-8",result:null,notes:"beat last weeks reps or weight"},{name:"Underhand Cable / Machine Row",sets:3,reps:"6-8",result:null,notes:"end with partials"},{name:"Incline Dumbbell Bench Press",sets:2,reps:"8-12",result:null,notes:null},{name:"Neutral Grip Lat Pulldown",sets:2,reps:"8-12",result:null,notes:null},{name:"Dumbbell Fly",sets:2,reps:"8-12",result:null,notes:"failure + partials"},{name:"Rope Straight-arm Lat Pullthrough",sets:1,reps:"10-15",result:null,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:3,reps:"8-12",result:null,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable Straight Bar Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:2,reps:"6-8",result:null,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:2,reps:"6-8",result:null,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable Lateral Raise",sets:2,reps:"8-12",result:null,notes:null},{name:"Machine Preacher Curl",sets:2,reps:"8-12",result:null,notes:null},{name:"Cable EZ Bar Upright Row",sets:2,reps:"10-15",result:null,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:null,notes:null},{name:"Barbell Forearm Extension",sets:2,reps:"10-15",result:null,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:3,reps:"8-12",result:null,notes:null}]}},
+  9:{1:{label:"LEGS A",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:3,reps:"8-12",result:null,notes:null},{name:"Smith Machine Squat",sets:3,reps:"4-6, 6-8x2",result:null,notes:"beat last weeks reps or weight"},{name:"Weighted Hip Extension",sets:3,reps:"6-8",result:null,notes:null},{name:"Single-Leg Leg Extension",sets:3,reps:"8-12",result:null,notes:"failure + partials"},{name:"Prone Hamstring Curl",sets:3,reps:"8-12",result:null,notes:"failure + partials"},{name:"Hip Abduction",sets:3,reps:"8-12",result:null,notes:null},{name:"Cable Ab Crunch",sets:3,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A",exercises:[{name:"Incline Smith Machine Bench Press",sets:3,reps:"4-6, 6-8x2",result:null,notes:"beat last weeks reps or weight"},{name:"Wide-grip Lat Pulldown",sets:3,reps:"8-12",result:null,notes:null},{name:"Weighted Dip / Assisted Dip",sets:3,reps:"8-12",result:null,notes:null},{name:"Single-Arm Cable Row",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Machine Chest Fly",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Smith Machine Shrug",sets:4,reps:"6-10",result:null,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:4,reps:"10-15",result:null,notes:"failure"}]},3:{label:"ARMS A",exercises:[{name:"Smith Machine Close-Grip Bench Press",sets:3,reps:"6-8",result:null,notes:"failure"},{name:"Barbell Bicep Curl",sets:3,reps:"6-8",result:null,notes:"last set failure + partials"},{name:"Cable Rope Pushdown",sets:3,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Dumbbell Hammer Curl",sets:3,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Single-Arm Cable Tricep Pushdown",sets:3,reps:"8-12",result:null,notes:"neutral grip"},{name:"Dumbbell Lateral Raise",sets:3,reps:"8-12",result:null,notes:null},{name:"Single-Arm Cable Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Bent-Over Cable Rear Delt Fly",sets:3,reps:"8-12",result:null,notes:null},{name:"Plate Wrist Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"8-12",result:null,notes:null}]},4:{label:"LEGS B",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Seated Calf Raise",sets:3,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Smith Machine Romanian Deadlift",sets:3,reps:"4-6, 6-8x2",result:null,notes:"beat last weeks reps or weight"},{name:"Smith Machine Reverse Lunge",sets:3,reps:"6-8",result:null,notes:"one leg at a time"},{name:"Seated Leg Curl",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Leg Extension",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Hip Adduction",sets:3,reps:"8-12",result:null,notes:null},{name:"Weighted Decline Sit-up",sets:3,reps:"8-12",result:null,notes:null}]},5:{label:"TORSO B",exercises:[{name:"Strict Press",sets:3,reps:"4-6, 6-8x2",result:null,notes:"beat last weeks reps or weight"},{name:"Wide-grip row",sets:3,reps:"6-8",result:null,notes:"failure + partials"},{name:"Machine Press",sets:3,reps:"8-12",result:null,notes:null},{name:"Single-Arm Lat Pulldown",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Incline Dumbbell Fly",sets:3,reps:"8-12",result:null,notes:"last set failure + partials"},{name:"Rope Straight-arm Lat Pullthrough",sets:2,reps:"10-15",result:null,notes:"burnout"},{name:"Lean-over Dumbbell Shrug",sets:4,reps:"8-12",result:null,notes:"2-sec hold @ top"}]},6:{label:"ARMS B",exercises:[{name:"Cable Straight Bar Tricep Pushdown",sets:3,reps:"8-12",result:null,notes:null},{name:"Cable Straight Bar Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Overhead Dumbbell Tricep Extension",sets:3,reps:"6-8",result:null,notes:null},{name:"Seated Dumbbell Hammer Curl",sets:3,reps:"6-8",result:null,notes:null},{name:"Single-Arm Supinated Tricep Cable Pushdown",sets:3,reps:"8-12",result:null,notes:null},{name:"Cable Lateral Raise",sets:3,reps:"8-12",result:null,notes:null},{name:"Machine Preacher Curl",sets:3,reps:"8-12",result:null,notes:null},{name:"Cable EZ Bar Upright Row",sets:3,reps:"10-15",result:null,notes:null},{name:"Cable Behind The Back Wrist Curl",sets:2,reps:"10-15",result:null,notes:null},{name:"Barbell Forearm Extension",sets:3,reps:"10-15",result:null,notes:null},{name:"Reverse Pec Deck Rear Delt Fly",sets:4,reps:"8-12",result:null,notes:null}]}},
+  12:{1:{label:"LEGS A (DELOAD)",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:2,reps:"8-12",result:null,notes:null},{name:"Smith Machine Squat",sets:3,reps:"6",result:null,notes:"60% of your best 6 rep max"},{name:"Weighted Hip Extension",sets:1,reps:"6-8",result:null,notes:null},{name:"Single-Leg Leg Extension",sets:1,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:1,reps:"8-12",result:null,notes:null},{name:"Hip Abduction",sets:1,reps:"8-12",result:null,notes:null},{name:"Cable Ab Crunch",sets:1,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A (DELOAD)",exercises:[{name:"Incline Smith Machine Bench Press",sets:3,reps:"6",result:null,notes:"60% of your best 6 rep max"},{name:"Wide-grip Lat Pulldown",sets:1,reps:"8-10",result:null,notes:null},{name:"Weighted Dip / Assisted Dip",sets:1,reps:"8-10",result:null,notes:null},{name:"Single-Arm Cable Row",sets:1,reps:"8-12",result:null,notes:null},{name:"Machine Chest Fly",sets:1,reps:"8-12",result:null,notes:null},{name:"Smith Machine Shrug",sets:2,reps:"6-10",result:null,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:2,reps:"10-15",result:null,notes:null}]}},
+};
+// Fill weeks 6-8, 10-11 with same structure as 5 and 9 (same exercises, no results)
+[6,7,8].forEach(w => { WORKOUT_DATA[w] = JSON.parse(JSON.stringify(WORKOUT_DATA[5])); WORKOUT_DATA[w][1].exercises.forEach(e => e.result = null); });
+[10,11].forEach(w => { WORKOUT_DATA[w] = JSON.parse(JSON.stringify(WORKOUT_DATA[9])); });
+
+// ── Habit Data ──
+const HABIT_LABELS = ["Reading", "No ASPM", "10K Steps", "Workout", "Track Weight", "Track Food", "Deep Work", "Reflection"];
+const HABIT_ICONS = ["📖", "🚫", "🚶", "💪", "⚖️", "🍽️", "🧠", "🪞"];
+const habitHistory = [
+  // W1: Mon Jan 19 - Sat Jan 24
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+  // Sun Jan 25 = REST
+  [1,1,1,0,1,1,1,1],
+  // W2: Mon Jan 26 - Sat Jan 31
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1],[1,1,0,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+  // Sun Feb 1 = REST
+  [1,1,1,0,1,1,1,1],
+  // W3: Mon Feb 2 - Sat Feb 7
+  [1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,0,1,1,1],
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+  // Sun Feb 8 = REST
+  [1,1,1,0,1,1,1,1],
+  // W4: Mon Feb 9 - Sat Feb 14
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+  // Sun Feb 15 = REST
+  [1,1,1,0,1,1,1,1],
+  // W5: Mon Feb 16 - Wed Feb 18 (today)
+  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+];
+
+const WEIGHT_DATA = [162.6,162.0,160.0,159.6,158.6,160.2,159.8];
+
+// ── Font Size Scaler ──
+const TEXT_OFFSETS = { small: 0, medium: 1, large: 3, giant: 5, really: 8 };
+let _currentTextSize = "medium";
+const fs = (base) => base + (TEXT_OFFSETS[_currentTextSize] || 0);
+
+// ── Mini Chart Component ──
+let _chartId = 0;
+function MiniChart({ data, color, height = 60, label }) {
+  const [gradId] = useState(() => `grad-${++_chartId}`);
+  if (!data || data.length < 2) return null;
+  const validData = data.filter(d => d !== null && d !== undefined);
+  if (validData.length < 2) return null;
+  const min = Math.min(...validData) - 1;
+  const max = Math.max(...validData) + 1;
+  const range = max - min || 1;
+  const w = 100;
+  const points = validData.map((v, i) => {
+    const x = (i / (validData.length - 1)) * w;
+    const y = height - ((v - min) / range) * (height - 10) - 5;
+    return `${x},${y}`;
+  }).join(" ");
+  const areaPoints = points + ` ${w},${height} 0,${height}`;
+  return (
+    <div style={{ position: "relative" }}>
+      {label && <div style={{ fontSize: fs(10), opacity: 0.5, marginBottom: 4 }}>{label}</div>}
+      <svg viewBox={`0 0 ${w} ${height}`} style={{ width: "100%", height }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={areaPoints} fill={`url(#${gradId})`} />
+        <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: fs(10), opacity: 0.4, marginTop: 2 }}>
+        <span>{validData[0]}</span>
+        <span>{validData[validData.length - 1]}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──
+function SuperhumanApp() {
+  const [theme, setTheme] = useState(() => loadState("theme", "arctic"));
+  const [tab, setTab] = useState("habits");
+  const [week, setWeek] = useState(5);
+  const [day, setDay] = useState(3);
+  const [expandedEx, setExpandedEx] = useState(null);
+  const [showAlts, setShowAlts] = useState(null);
+  const [logData, setLogData] = useState(() => loadState("logData", {}));
+  const [customAlt, setCustomAlt] = useState("");
+  const [showWeekPicker, setShowWeekPicker] = useState(false);
+  const [swappedExercises, setSwappedExercises] = useState(() => loadState("swappedExercises", {}));
+  const [nextWorkoutPos, setNextWorkoutPos] = useState(() => loadState("nextWorkoutPos", null));
+  const [expandedHabit, setExpandedHabit] = useState(null);
+  // Profile data
+  const [profile, setProfile] = useState(loadProfile);
+  const [textSize, setTextSize] = useState(() => { const s = loadState("textSize", "medium"); return ["small","medium","large","giant","really"].includes(s) ? s : "medium"; });
+  const [workoutMode, setWorkoutMode] = useState(() => { const m = loadState("workoutMode", "gym"); return ["gym","home","bodyweight"].includes(m) ? m : "gym"; });
+  const [expandedFaq, setExpandedFaq] = useState(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
+
+  // Sync text size to module-level scaler
+  _currentTextSize = textSize;
+  // Habit notes: { "2026-02-18": { 0: "Read 30 pages", 6: "2hr deep focus" } }
+  const [habitNotes, setHabitNotes] = useState(() => loadState("habitNotes", {}));
+  // Step count per date: { "2026-02-18": 8500 }
+  const [stepLog, setStepLog] = useState(() => loadState("stepLog", {}));
+  // Food tracking
+  const [foodLog, setFoodLog] = useState(() => loadState("foodLog", {}));
+  const [calorieGoal, setCalorieGoal] = useState(() => loadState("calorieGoal", 2000));
+  const [calorieApiKey, setCalorieApiKey] = useState(() => loadState("calorieApiKey", ""));
+  const [foodInput, setFoodInput] = useState("");
+  const [foodPending, setFoodPending] = useState(null); // API result waiting for confirm
+  const [foodLoading, setFoodLoading] = useState(false);
+  const [foodError, setFoodError] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [weightLog, setWeightLog] = useState(() => {
+    const _saved4 = loadState("weightLog", null); if (_saved4) return _saved4;
+    const log = {};
+    const startDate = new Date(2026, 0, 19);
+    WEIGHT_DATA.forEach((w, i) => {
+      if (w > 0) {
+        const d = new Date(startDate);
+        d.setDate(d.getDate() + i);
+        log[toLocalDateStr(d)] = w;
+      }
+    });
+    return log;
+  });
+  const [weightInput, setWeightInput] = useState("");
+  const [weightLogAnim, setWeightLogAnim] = useState(false);
+
+  // ── Date Tracking ──
+  const todayStr = toLocalDateStr(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  // Session log: { "2026-02-18": { week: 5, day: 1, completedAt: "...", exercises: {...} } }
+  const [sessionLog, setSessionLog] = useState(() => {
+    const _saved = loadState("sessionLog", null); if (_saved) return _saved;
+    // Program starts Mon Jan 19. Mon-Sat = workout, Sun = rest.
+    // Verified: Feb 16=W5D1(Legs), Feb 17=W5D2(Torso), Feb 18=W5D3(Arms)
+    const log = {};
+    const start = new Date(2026, 0, 19); // Monday Jan 19
+    let dayCount = 0;
+    for (let w = 1; w <= 5; w++) {
+      for (let d = 1; d <= 6; d++) {
+        const date = new Date(start);
+        date.setDate(start.getDate() + dayCount);
+        const ds = toLocalDateStr(date);
+        if (ds <= "2026-02-18") { // only log up to today
+          log[ds] = { week: w, day: d, completedAt: ds + "T18:00:00Z", status: "completed" };
+        }
+        dayCount++;
+      }
+      dayCount++; // skip Sunday rest day
+    }
+    return log;
+  });
+
+  // Workout selection per date — pre-populated from session log
+  const [workoutSelection, setWorkoutSelection] = useState(() => {
+    const _saved2 = loadState("workoutSelection", null); if (_saved2) return _saved2;
+    const DAY_LABELS = { 1: "LEG A", 2: "TOR A", 3: "ARM A", 4: "LEG B", 5: "TOR B", 6: "ARM B" };
+    const sel = {};
+    Object.entries(sessionLog).forEach(([date, session]) => {
+      if (session.status === "completed" && session.day) {
+        sel[date] = { day: session.day, label: DAY_LABELS[session.day] || `D${session.day}` };
+      }
+    });
+    return sel;
+  });
+
+  // Habit log by date: { "2026-02-18": [true, false, true, ...] }
+  const [habitLog, setHabitLog] = useState(() => {
+    const _saved3 = loadState("habitLog", null); if (_saved3) return _saved3;
+    const log = {};
+    const start = new Date(2026, 0, 19);
+    habitHistory.forEach((dayHabits, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      log[toLocalDateStr(d)] = dayHabits.map(v => !!v);
+    });
+    return log;
+  });
+
+  // ── Persist to localStorage ──
+  useEffect(() => saveState("theme", theme), [theme]);
+  useEffect(() => saveState("sessionLog", sessionLog), [sessionLog]);
+  useEffect(() => saveState("weightLog", weightLog), [weightLog]);
+  useEffect(() => saveState("workoutSelection", workoutSelection), [workoutSelection]);
+  useEffect(() => saveState("habitLog", habitLog), [habitLog]);
+  useEffect(() => saveState("habitNotes", habitNotes), [habitNotes]);
+  useEffect(() => saveState("stepLog", stepLog), [stepLog]);
+  useEffect(() => saveState("logData", logData), [logData]);
+  useEffect(() => saveState("swappedExercises", swappedExercises), [swappedExercises]);
+  useEffect(() => saveState("nextWorkoutPos", nextWorkoutPos), [nextWorkoutPos]);
+  useEffect(() => saveState("profile", profile), [profile]);
+  useEffect(() => saveState("textSize", textSize), [textSize]);
+  useEffect(() => saveState("workoutMode", workoutMode), [workoutMode]);
+  useEffect(() => saveState("foodLog", foodLog), [foodLog]);
+  useEffect(() => saveState("calorieGoal", calorieGoal), [calorieGoal]);
+  useEffect(() => saveState("calorieApiKey", calorieApiKey), [calorieApiKey]);
+
+  const isToday = selectedDate === todayStr;
+  const selectedDateObj = new Date(selectedDate + "T12:00:00");
+  const selectedDateLabel = selectedDateObj.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  // Get habits for selected date
+  const selectedHabits = habitLog[selectedDate] || HABIT_LABELS.map(() => false);
+  const setSelectedHabits = (newHabits) => {
+    setHabitLog(prev => ({ ...prev, [selectedDate]: newHabits }));
+  };
+  const toggleHabit = (idx, value) => {
+    setHabitLog(prev => {
+      const current = prev[selectedDate] || HABIT_LABELS.map(() => false);
+      return { ...prev, [selectedDate]: current.map((v, i) => i === idx ? value : v) };
+    });
+  };
+
+  // Get session for selected date
+  const selectedSession = sessionLog[selectedDate];
+  const isSessionActive = selectedSession?.status === "active";
+  const isPastDate = selectedDate < todayStr;
+
+  // Compute next workout position (rolling schedule)
+  const getNextWorkoutPosition = () => {
+    // Simple: nextWorkoutPos is the single source of truth
+    if (nextWorkoutPos && nextWorkoutPos.week && nextWorkoutPos.day) {
+      return { ...nextWorkoutPos };
+    }
+    // Fallback for first load / migration: derive from last completed session
+    const completedSessions = Object.entries(sessionLog)
+      .filter(([_, s]) => s.status === "completed" && s.week && s.day)
+      .sort((a, b) => b[0].localeCompare(a[0]));
+    if (completedSessions.length === 0) return { week: 1, day: 1 };
+    const last = completedSessions[0][1];
+    const lastPos = (last.week - 1) * 6 + last.day;
+    const nextPos = Math.min(lastPos + 1, 72);
+    const derived = {
+      week: Math.floor((nextPos - 1) / 6) + 1,
+      day: ((nextPos - 1) % 6) + 1,
+    };
+    setNextWorkoutPos(derived);
+    return derived;
+  };
+
+  // Navigate to next/previous week (arrow buttons)
+  const shiftWeek = (direction) => {
+    // Get the Monday of the current week
+    const d = new Date(selectedDate + "T12:00:00");
+    const dayOfWeek = d.getDay(); // 0=Sun
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    // Move to next/prev Monday
+    monday.setDate(monday.getDate() + direction * 7);
+    const targetMonday = toLocalDateStr(monday);
+    if (direction > 0) {
+      // Forward: block only if entire target week is in the future
+      if (targetMonday > todayStr) return;
+      // Land on today if it falls within the target week, otherwise Monday
+      setSelectedDate(todayStr >= targetMonday ? todayStr : targetMonday);
+    } else {
+      // Backward: go to the same weekday in the previous week, or Monday
+      setSelectedDate(targetMonday);
+    }
+  };
+
+  // Start a workout session (today only — goes to active state)
+  const startSession = () => {
+    setSessionLog(prev => ({
+      ...prev,
+      [selectedDate]: { week, day, startedAt: new Date().toISOString(), status: "active" }
+    }));
+  };
+
+  // Mark session complete and advance position
+  const completeSession = () => {
+    const sess = sessionLog[selectedDate];
+    setSessionLog(prev => ({
+      ...prev,
+      [selectedDate]: { ...prev[selectedDate], completedAt: new Date().toISOString(), status: "completed" }
+    }));
+    // Auto-check Workout habit at 50%+ exercise completion
+    const cExercises = sess?.week && sess?.day ? (WORKOUT_DATA[sess.week]?.[sess.day]?.exercises || []) : [];
+    if (cExercises.length > 0) {
+      let cDone = 0;
+      cExercises.forEach(ex => {
+        const dn = resolveDisplay(sess.week, sess.day, ex.name);
+        let allDone = ex.sets > 0;
+        for (let s = 0; s < ex.sets; s++) {
+          if (!logData[`${selectedDate}-${dn}-${s}`]?.done) { allDone = false; break; }
+        }
+        if (allDone) cDone++;
+      });
+      if ((cDone / cExercises.length) >= 0.5) toggleHabit(3, true);
+    }
+    // Advance from the SESSION's stored position, not from display state
+    const sessWeek = sess?.week || week;
+    const sessDay = sess?.day || day;
+    let nextDay = sessDay + 1, nextWeek = sessWeek;
+    if (nextDay > 6) { nextDay = 1; nextWeek++; }
+    if (nextWeek > 12) { nextWeek = 12; nextDay = 6; }
+    setNextWorkoutPos({ week: nextWeek, day: nextDay });
+  };
+
+  // Log a past workout (skips active, goes straight to completed)
+  const logPastSession = () => {
+    setSessionLog(prev => ({
+      ...prev,
+      [selectedDate]: { week, day, completedAt: selectedDate + "T12:00:00", status: "completed" }
+    }));
+  };
+
+  // Undo / re-open a completed session for editing
+  const reopenSession = () => {
+    setSessionLog(prev => ({
+      ...prev,
+      [selectedDate]: { ...prev[selectedDate], status: "active", reopened: true }
+    }));
+  };
+
+  // Elapsed timer for active sessions
+  const [elapsed, setElapsed] = useState("");
+  useEffect(() => {
+    if (!isSessionActive || !selectedSession?.startedAt) { setElapsed(""); return; }
+    const tick = () => {
+      const diff = Math.floor((Date.now() - new Date(selectedSession.startedAt).getTime()) / 1000);
+      const m = Math.floor(diff / 60);
+      const s = diff % 60;
+      setElapsed(`${m}:${s.toString().padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isSessionActive, selectedSession?.startedAt]);
+
+  // Auto-navigate to the correct week/day when selecting a date
+  useEffect(() => {
+    const session = sessionLog[selectedDate];
+
+    if (selectedDate === todayStr) {
+      // Today: use nextWorkoutPos if no active/completed session, else use session
+      if (session && session.week && session.day) {
+        setWeek(session.week);
+        setDay(session.day);
+      } else {
+        const next = getNextWorkoutPosition();
+        setWeek(next.week);
+        setDay(next.day);
+      }
+      setExpandedEx(null);
+    } else if (session && session.week && session.day) {
+      // Past/future with session — show that session's workout
+      setWeek(session.week);
+      setDay(session.day);
+      setExpandedEx(null);
+    } else if (selectedDate > todayStr) {
+      // Future with no session — preview next workout
+      const next = getNextWorkoutPosition();
+      setWeek(next.week);
+      setDay(next.day);
+      setExpandedEx(null);
+    }
+    // Past date with no session: leave week/day as-is (banner shows "Rest Day")
+    // Sync weight input to selected date
+    const w = weightLog[selectedDate];
+    setWeightInput(w ? String(w) : "");
+  }, [selectedDate]);
+
+  // Build week view centered around selected date (Mon-Sun)
+  const getWeekDays = (refDate) => {
+    const d = new Date(refDate + "T12:00:00");
+    const dayOfWeek = d.getDay(); // 0=Sun
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    return Array.from({ length: 7 }, (_, i) => {
+      const dd = new Date(monday);
+      dd.setDate(monday.getDate() + i);
+      return toLocalDateStr(dd);
+    });
+  };
+  const weekDays = getWeekDays(selectedDate);
+  const weekStart = new Date(weekDays[0] + "T12:00:00");
+  const weekEnd = new Date(weekDays[6] + "T12:00:00");
+  const weekLabel = weekStart.getMonth() === weekEnd.getMonth()
+    ? `${weekStart.toLocaleDateString(undefined, { month: "short" })} ${weekStart.getDate()}–${weekEnd.getDate()}`
+    : `${weekStart.toLocaleDateString(undefined, { month: "short" })} ${weekStart.getDate()} – ${weekEnd.toLocaleDateString(undefined, { month: "short" })} ${weekEnd.getDate()}`;
+
+  // Check if a date has activity
+  const dateHasWorkout = (ds) => sessionLog[ds]?.status === "completed";
+  const dateHasHabits = (ds) => {
+    const h = habitLog[ds];
+    return h && h.filter(Boolean).length > 0;
+  };
+  const dateHasWeight = (ds) => !!weightLog[ds];
+
+  // Program day counter (days since Jan 21)
+  const programStart = new Date(2026, 0, 19);
+  const programDay = Math.floor((selectedDateObj - programStart) / (1000 * 60 * 60 * 24)) + 1;
+
+  const t = THEMES[theme];
+  const weekData = WORKOUT_DATA[week] || WORKOUT_DATA[5];
+  const dayData = weekData?.[day];
+  const exercises = dayData?.exercises || [];
+  const phaseLabel = week <= 4 ? "Phase 1" : week <= 8 ? "Phase 2" : "Phase 3";
+  const phaseWeeks = week <= 4 ? "Wk 1-4" : week <= 8 ? "Wk 5-8" : "Wk 9-12";
+
+  const getPrevWeekResult = (exName) => {
+    const sorted = Object.entries(logData)
+      .filter(([key]) => key.includes(`-${exName}-`) && !key.startsWith(selectedDate))
+      .sort(([a], [b]) => b.localeCompare(a));
+    if (sorted.length > 0) {
+      const lastEntry = sorted[0][1];
+      if (lastEntry.weight) return `${lastEntry.weight}×${lastEntry.reps || "?"}`;
+    }
+    if (week <= 1) return null;
+    const prev = WORKOUT_DATA[week - 1];
+    if (!prev || !prev[day]) return null;
+    const ex = prev[day].exercises.find(e => e.name === exName);
+    return ex?.result || null;
+  };
+
+  const getExerciseHistory = (exName) => {
+    const hist = [];
+    const entries = Object.entries(logData)
+      .filter(([key]) => key.includes(`-${exName}-`))
+      .sort(([a], [b]) => a.localeCompare(b));
+    const byDate = {};
+    entries.forEach(([key, val]) => {
+      const date = key.split("-").slice(0, 3).join("-");
+      if (val.weight && !byDate[date]) {
+        byDate[date] = { date, weight: val.weight, reps: val.reps };
+        hist.push({ week: date, result: `${val.weight}×${val.reps || "?"}` });
+      }
+    });
+    if (hist.length === 0) {
+      for (let w = 1; w <= 12; w++) {
+        const wd = WORKOUT_DATA[w];
+        if (!wd) continue;
+        for (let d = 1; d <= 6; d++) {
+          if (!wd[d]) continue;
+          const ex = wd[d].exercises.find(e => e.name === exName);
+          if (ex?.result) hist.push({ week: w, result: ex.result });
+        }
+      }
+    }
+    return hist;
+  };
+
+  const habitStreaks = HABIT_LABELS.map((_, idx) => {
+    // Calculate streak backwards from selected date
+    let streak = 0;
+    const d = new Date(selectedDate + "T12:00:00");
+    for (let i = 0; i < 90; i++) {
+      const ds = toLocalDateStr(d);
+      const dayLog = habitLog[ds];
+      if (dayLog && dayLog[idx]) streak++;
+      else if (i > 0) break; // don't break on current day if not yet done
+      else if (i === 0 && !dayLog?.[idx]) { streak = 0; break; }
+      d.setDate(d.getDate() - 1);
+    }
+    return streak;
+  });
+
+  const habitRates = HABIT_LABELS.map((_, idx) => {
+    const allDays = Object.values(habitLog);
+    if (allDays.length === 0) return 0;
+    const total = allDays.reduce((s, d) => s + (d[idx] ? 1 : 0), 0);
+    return Math.round((total / allDays.length) * 100);
+  });
+
+  const totalCompletedToday = selectedHabits.filter(Boolean).length;
+  const todayRate = Math.round((totalCompletedToday / HABIT_LABELS.length) * 100);
+
+  // Habit notes helpers
+  const getNote = (idx) => habitNotes[selectedDate]?.[idx] || "";
+  const setNote = (idx, text) => {
+    setHabitNotes(prev => ({
+      ...prev,
+      [selectedDate]: { ...(prev[selectedDate] || {}), [idx]: text }
+    }));
+  };
+
+  // Food tracking helpers
+  const estimateFood = async (text) => {
+    if (!calorieApiKey) { setFoodError("Set your API key in Profile → Food Tracker"); return; }
+    setFoodLoading(true); setFoodError("");
+    try {
+      const res = await fetch("https://api.calorieninjas.com/v1/nutrition?query=" + encodeURIComponent(text), {
+        headers: { "X-Api-Key": calorieApiKey }
+      });
+      if (!res.ok) throw new Error("API error " + res.status);
+      const data = await res.json();
+      if (!data.items || data.items.length === 0) { setFoodError("No results — try being more specific"); setFoodLoading(false); return; }
+      const items = data.items.map(it => ({
+        name: it.name, cal: Math.round(it.calories), protein: Math.round(it.protein_g),
+        carbs: Math.round(it.carbs_total_g), fat: Math.round(it.fat_total_g),
+        serving: it.serving_size_g ? `${Math.round(it.serving_size_g)}g` : "",
+      }));
+      const totals = items.reduce((s, i) => ({ cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
+      setFoodPending({ text, items, ...totals, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
+    } catch (e) { setFoodError(e.message || "Failed to estimate"); }
+    setFoodLoading(false);
+  };
+  const addFoodEntry = () => {
+    if (!foodPending) return;
+    setFoodLog(prev => {
+      const dayLog = prev[selectedDate] || { entries: [] };
+      return { ...prev, [selectedDate]: { entries: [...dayLog.entries, { ...foodPending, id: Date.now() }] } };
+    });
+    toggleHabit(5, true);
+    setFoodPending(null); setFoodInput("");
+  };
+  const removeFoodEntry = (id) => {
+    setFoodLog(prev => {
+      const dayLog = prev[selectedDate];
+      if (!dayLog) return prev;
+      const entries = dayLog.entries.filter(e => e.id !== id);
+      if (entries.length === 0) { toggleHabit(5, false); }
+      return { ...prev, [selectedDate]: { entries } };
+    });
+  };
+  const getDayFoodTotals = (date) => {
+    const entries = foodLog[date]?.entries || [];
+    return entries.reduce((s, e) => ({ cal: s.cal + e.cal, protein: s.protein + e.protein, carbs: s.carbs + e.carbs, fat: s.fat + e.fat }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
+  };
+  const startListening = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setFoodError("Voice not supported in this browser"); return; }
+    const recognition = new SR();
+    recognition.lang = "en-US"; recognition.interimResults = false;
+    recognition.onresult = (e) => { setFoodInput(e.results[0][0].transcript); setIsListening(false); };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    setIsListening(true);
+    recognition.start();
+  };
+
+  // Workout selection helpers
+  const WORKOUT_DAY_OPTIONS = [
+    { day: 1, label: "LEG A" },
+    { day: 2, label: "TOR A" },
+    { day: 3, label: "ARM A" },
+    { day: 4, label: "LEG B" },
+    { day: 5, label: "TOR B" },
+    { day: 6, label: "ARM B" },
+  ];
+  const getWorkoutSelection = () => workoutSelection[selectedDate] || null;
+  const selectWorkout = (dayOption) => {
+    setWorkoutSelection(prev => ({
+      ...prev,
+      [selectedDate]: dayOption
+    }));
+    toggleHabit(3, true);
+  };
+
+  // ── Weight Logging Helpers ──
+  const selectedWeight = weightLog[selectedDate] || null;
+  
+  const getSortedWeights = () => {
+    return Object.entries(weightLog)
+      .filter(([_, v]) => v > 0)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, weight]) => ({ date, weight }));
+  };
+  
+  const sortedWeights = getSortedWeights();
+  const selectedWeightIdx = sortedWeights.findIndex(e => e.date === selectedDate);
+  const prevWeightEntry = selectedWeightIdx > 0 ? sortedWeights[selectedWeightIdx - 1] : (sortedWeights.length > 0 && !selectedWeight ? sortedWeights[sortedWeights.length - 1] : null);
+  const weightChange = selectedWeight && prevWeightEntry ? (selectedWeight - prevWeightEntry.weight) : null;
+  
+  const allWeights = sortedWeights.map(e => e.weight);
+  const startWeight = allWeights.length > 0 ? allWeights[0] : null;
+  const currentWeight = allWeights.length > 0 ? allWeights[allWeights.length - 1] : null;
+  const totalChange = startWeight && currentWeight ? currentWeight - startWeight : null;
+  
+  const logWeight = (val) => {
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      setWeightLog(prev => ({ ...prev, [selectedDate]: num }));
+      setWeightInput(String(num));
+      setWeightLogAnim(true);
+      setTimeout(() => setWeightLogAnim(false), 600);
+      toggleHabit(4, true);
+    }
+  };
+
+  const commitWeightInput = () => {
+    const v = parseFloat(weightInput);
+    if (!isNaN(v) && v > 50 && v < 500) {
+      setWeightLog(prev => ({ ...prev, [selectedDate]: v }));
+      setWeightInput(String(v));
+      toggleHabit(4, true);
+    } else if (weightInput === "") {
+      setWeightLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+    }
+  };
+  
+  const adjustWeight = (delta) => {
+    const current = selectedWeight || parseFloat(weightInput) || (prevWeightEntry?.weight) || 160;
+    const newVal = Math.round((current + delta) * 10) / 10;
+    setWeightLog(prev => ({ ...prev, [selectedDate]: newVal }));
+    setWeightInput(String(newVal));
+    setWeightLogAnim(true);
+    setTimeout(() => setWeightLogAnim(false), 600);
+    toggleHabit(4, true);
+  };
+  
+  const last7Weights = sortedWeights.slice(-7);
+
+  // Resolve swap with cross-week fallback (same exercise on same day carries across weeks)
+  const resolveSwap = (w, d, exName) => {
+    const key = `${w}-${d}-${exName}`;
+    if (swappedExercises[key]) return swappedExercises[key];
+    for (let wk = w - 1; wk >= 1; wk--) {
+      const fb = `${wk}-${d}-${exName}`;
+      if (swappedExercises[fb]) return swappedExercises[fb];
+    }
+    for (let wk = w + 1; wk <= 12; wk++) {
+      const fb = `${wk}-${d}-${exName}`;
+      if (swappedExercises[fb]) return swappedExercises[fb];
+    }
+    return exName;
+  };
+
+  const resolveDisplay = (w, d, exName) => {
+    const swapped = resolveSwap(w, d, exName);
+    if (swapped !== exName) return swapped; // manual swap takes priority
+    if (workoutMode === "home") {
+      const alts = ALTERNATIVES[exName] || [];
+      const homeAlt = alts.find(a => a.startsWith("H: "));
+      if (homeAlt) return homeAlt;
+    }
+    if (workoutMode === "bodyweight") {
+      const alts = ALTERNATIVES[exName] || [];
+      const bwAlt = alts.find(a => a.startsWith("BW: "));
+      if (bwAlt) return bwAlt;
+    }
+    return exName;
+  };
+  const displayName = (exName) => resolveDisplay(week, day, exName);
+
+  const swapExercise = (originalName, newName) => {
+    const key = `${week}-${day}-${originalName}`;
+    setSwappedExercises(prev => ({ ...prev, [key]: newName }));
+    setShowAlts(null);
+  };
+
+  return (
+    <div style={{
+      fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
+      background: t.bg, color: t.text, height: "100vh",
+      maxWidth: 430, margin: "0 auto", position: "relative",
+      display: "flex", flexDirection: "column", overflow: "hidden",
+    }}>
+      {/* ── Header ── */}
+      <div className="safe-top" style={{ background: t.bg }}>
+        <div style={{
+          padding: "12px 20px 12px", display: "flex", alignItems: "center",
+          justifyContent: "space-between", borderBottom: `1px solid ${t.border}`,
+        }}>
+          <div>
+            <div style={{ fontSize: fs(11), fontWeight: 500, color: t.accent, letterSpacing: 2, textTransform: "uppercase", fontFamily: "'DM Mono', monospace" }}>
+              SUPERHUMAN 90
+            </div>
+            <div style={{ fontSize: fs(13), color: t.textDim, marginTop: 2 }}>
+              {phaseLabel} · {phaseWeeks}
+            </div>
+          </div>
+          {profile.name && (
+            <div style={{ fontSize: fs(13), color: t.textDim, fontWeight: 500 }}>
+              {profile.name.split(" ")[0]}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Date Navigator ── */}
+      <div style={{
+        padding: "12px 16px 10px",
+        borderBottom: `1px solid ${t.border}`,
+        background: t.bg,
+      }}>
+        {/* Week navigation row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <button onClick={() => shiftWeek(-1)}
+            style={{
+              width: 32, height: 32, borderRadius: 8, border: `1px solid ${t.border}`,
+              background: t.card, color: t.text, cursor: "pointer", fontSize: fs(14),
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>◂</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: fs(14), fontWeight: 600 }}>{weekLabel}</div>
+            {programDay > 0 && programDay <= 90 && (
+              <div style={{ fontSize: fs(11), color: t.accent, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
+                Program Day {programDay} of 90
+              </div>
+            )}
+          </div>
+          <button onClick={() => shiftWeek(1)}
+            style={{
+              width: 32, height: 32, borderRadius: 8, border: `1px solid ${t.border}`,
+              background: t.card, color: t.text, cursor: "pointer", fontSize: fs(14),
+              display: "flex", alignItems: "center", justifyContent: "center",
+              opacity: (() => { const nextMon = new Date(weekDays[0] + "T12:00:00"); nextMon.setDate(nextMon.getDate() + 7); return toLocalDateStr(nextMon) <= todayStr; })() ? 1 : 0.3,
+            }}>▸</button>
+        </div>
+
+        {/* 7-day week grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          {weekDays.map(ds => {
+            const d = new Date(ds + "T12:00:00");
+            const dayName = d.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase();
+            const dayNum = d.getDate();
+            const monthShort = d.toLocaleDateString(undefined, { month: "short" }).toUpperCase();
+            const isSel = ds === selectedDate;
+            const isTodayDate = ds === todayStr;
+            const isFuture = ds > todayStr;
+            const hasW = dateHasWorkout(ds);
+            const hasH = dateHasHabits(ds);
+            const hasWt = dateHasWeight(ds);
+            const hasAny = hasW || hasH || hasWt;
+
+            return (
+              <button key={ds}
+                onClick={() => setSelectedDate(ds)}
+                style={{
+                  padding: "6px 2px 5px",
+                  borderRadius: 12,
+                  border: isSel && !isTodayDate ? `2px solid ${t.accent}` : "2px solid transparent",
+                  background: isTodayDate
+                    ? t.gradient
+                    : isSel ? t.accentGlow : "transparent",
+                  cursor: "pointer",
+                  opacity: 1,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 0,
+                  color: t.text, fontFamily: "'DM Mono', monospace",
+                  position: "relative",
+                  boxShadow: isTodayDate ? `0 3px 12px ${t.accent}50` : "none",
+                  transition: "all 0.15s ease",
+                }}>
+                <span style={{
+                  fontSize: fs(9), fontWeight: 600, letterSpacing: 0.5,
+                  color: isTodayDate ? "rgba(255,255,255,0.8)" : t.textDim,
+                }}>{dayName}</span>
+                <span style={{
+                  fontSize: fs(18), fontWeight: isTodayDate ? 800 : isSel ? 700 : 500,
+                  color: isTodayDate ? "#fff" : isSel ? t.accent : t.text,
+                  lineHeight: 1.3,
+                }}>{dayNum}</span>
+                {/* Show month abbreviation on 1st of month or first day in strip */}
+                {(dayNum === 1 || ds === weekDays[0]) && (
+                  <span style={{
+                    fontSize: fs(7), fontWeight: 700, letterSpacing: 0.5,
+                    color: isTodayDate ? "rgba(255,255,255,0.7)" : t.textDim,
+                    lineHeight: 1,
+                  }}>{monthShort}</span>
+                )}
+                {dayNum !== 1 && ds !== weekDays[0] && !isTodayDate && (
+                  <div style={{ display: "flex", gap: 2, marginTop: 2, height: 5 }}>
+                    {hasW && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.success }} />}
+                    {hasH && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.accent }} />}
+                    {hasWt && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.warning }} />}
+                  </div>
+                )}
+                {isTodayDate && (
+                  <span style={{
+                    fontSize: fs(7), fontWeight: 800, color: "#fff", letterSpacing: 1,
+                    lineHeight: 1, marginTop: 1,
+                  }}>TODAY</span>
+                )}
+                {!hasAny && !isTodayDate && dayNum !== 1 && ds !== weekDays[0] && (
+                  <div style={{ height: 5, marginTop: 2 }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Jump to today (if not in current week) */}
+        {!weekDays.includes(todayStr) && (
+          <button onClick={() => setSelectedDate(todayStr)}
+            style={{
+              width: "100%", marginTop: 8, padding: "7px", borderRadius: 8,
+              border: "none", background: t.accent + "18", color: t.accent,
+              fontSize: fs(12), fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            }}>
+            ↩ Back to Today
+          </button>
+        )}
+      </div>
+      {/* ── Content Area ── */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", paddingBottom: 160, WebkitOverflowScrolling: "touch" }}>
+
+        {/* ═══ WORKOUT TAB ═══ */}
+        {tab === "workout" && (
+          <div style={{ padding: "16px 16px 0" }}>
+
+            {/* Session Status Banner */}
+            {(() => {
+              // Get the workout label for the session
+              const sessionWorkoutLabel = selectedSession?.week && selectedSession?.day
+                ? WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.label
+                : null;
+
+              // CASE 1: Completed session
+              if (selectedSession?.status === "completed") {
+                const compExercises = WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.exercises || [];
+                let compTotal = compExercises.length, compDone = 0;
+                compExercises.forEach(ex => {
+                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name);
+                  let allSetsDone = ex.sets > 0;
+                  for (let si = 0; si < ex.sets; si++) {
+                    if (!logData[`${selectedDate}-${dn}-${si}`]?.done) { allSetsDone = false; break; }
+                  }
+                  if (allSetsDone) compDone++;
+                });
+                const compPct = compTotal > 0 ? Math.round((compDone / compTotal) * 100) : 0;
+
+                // Calculate workout duration
+                let durationStr = "";
+                if (selectedSession.startedAt && selectedSession.completedAt) {
+                  const durSec = Math.floor((new Date(selectedSession.completedAt) - new Date(selectedSession.startedAt)) / 1000);
+                  if (durSec > 0 && durSec < 86400) {
+                    const h = Math.floor(durSec / 3600);
+                    const m = Math.floor((durSec % 3600) / 60);
+                    const s = durSec % 60;
+                    durationStr = h > 0 ? `${h}h ${m}m` : `${m}:${s.toString().padStart(2, "0")}`;
+                  }
+                }
+
+                // Calculate average workout duration
+                let avgStr = "";
+                const durations = Object.values(sessionLog).filter(s =>
+                  s.status === "completed" && s.startedAt && s.completedAt
+                ).map(s => Math.floor((new Date(s.completedAt) - new Date(s.startedAt)) / 1000))
+                  .filter(d => d > 0 && d < 86400);
+                if (durations.length > 1) {
+                  const avgSec = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+                  const ah = Math.floor(avgSec / 3600);
+                  const am = Math.floor((avgSec % 3600) / 60);
+                  avgStr = ah > 0 ? `${ah}h ${am}m` : `${am}m`;
+                }
+
+                return (
+                  <div style={{
+                    padding: "12px 14px", borderRadius: 12, marginBottom: 14,
+                    background: t.card, border: `1px solid ${t.success}30`,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: fs(18) }}>✅</span>
+                        <div>
+                          <div style={{ fontSize: fs(13), fontWeight: 600, color: t.success }}>
+                            {sessionWorkoutLabel || "Workout"} — {compPct}%
+                            {durationStr && <span style={{ fontWeight: 500, opacity: 0.85 }}> · {durationStr}</span>}
+                          </div>
+                          <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                            W{selectedSession.week} D{selectedSession.day} · {compDone}/{compTotal} exercises
+                            {avgStr && ` · avg ${avgStr}`}
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={reopenSession}
+                        style={{
+                          padding: "5px 10px", borderRadius: 6, border: `1px solid ${t.border}`,
+                          background: "transparent", color: t.textDim, fontSize: fs(11),
+                          cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                        }}>
+                        Edit
+                      </button>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      marginTop: 8, height: 4, borderRadius: 2,
+                      background: t.border, overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", borderRadius: 2,
+                        width: `${compPct}%`, background: t.success,
+                      }} />
+                    </div>
+                  </div>
+                );
+              }
+              // CASE 2: Active session (in progress)
+              if (selectedSession?.status === "active") {
+                // Calculate workout completion %
+                const sessionExercises = WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.exercises || [];
+                let totalEx = sessionExercises.length, doneEx = 0;
+                sessionExercises.forEach(ex => {
+                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name);
+                  let allSetsDone = ex.sets > 0;
+                  for (let si = 0; si < ex.sets; si++) {
+                    if (!logData[`${selectedDate}-${dn}-${si}`]?.done) { allSetsDone = false; break; }
+                  }
+                  if (allSetsDone) doneEx++;
+                });
+                const pct = totalEx > 0 ? Math.round((doneEx / totalEx) * 100) : 0;
+
+                return (
+                  <div style={{
+                    padding: "12px 14px", borderRadius: 12, marginBottom: 14,
+                    background: t.success + "10", border: `1px solid ${t.success}30`,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{
+                          width: 10, height: 10, borderRadius: "50%", background: t.success,
+                          boxShadow: `0 0 8px ${t.success}80`,
+                          animation: "pulse 2s ease-in-out infinite",
+                        }} />
+                        <div>
+                          <div style={{ fontSize: fs(13), fontWeight: 600, color: t.success }}>
+                            {sessionWorkoutLabel || "Workout"} — {pct}%
+                          </div>
+                          <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                            W{selectedSession.week} D{selectedSession.day} · {doneEx}/{totalEx} exercises
+                            {elapsed && ` · ${elapsed}`}
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={completeSession}
+                        style={{
+                          padding: "8px 16px", borderRadius: 8, border: "none",
+                          background: t.success, color: "#fff", fontSize: fs(13),
+                          fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                        }}>
+                        Finish ✓
+                      </button>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      marginTop: 8, height: 4, borderRadius: 2,
+                      background: t.border, overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", borderRadius: 2,
+                        width: `${pct}%`, background: t.success,
+                        transition: "width 0.3s ease",
+                      }} />
+                    </div>
+                  </div>
+                );
+              }
+              // CASE 3: No session — Today → Start, Past → Rest Day, Future → Preview
+              const isFutureDate = selectedDate > todayStr;
+              const nextPos = getNextWorkoutPosition();
+              const completedCount = Object.values(sessionLog).filter(s => s.status === "completed").length;
+
+              // Program complete
+              if (completedCount >= 72 && !isFutureDate && !isPastDate) {
+                return (
+                  <div style={{
+                    padding: "20px 14px", borderRadius: 14, marginBottom: 14,
+                    background: t.card, border: `2px solid ${t.success}`,
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: fs(28), marginBottom: 6 }}>🏆</div>
+                    <div style={{ fontSize: fs(16), fontWeight: 700, color: t.success }}>Program Complete!</div>
+                    <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>All 72 workouts finished. You did it.</div>
+                  </div>
+                );
+              }
+
+              // Past date with no session → Rest Day
+              if (isPastDate) {
+                return (
+                  <div style={{
+                    padding: "14px", borderRadius: 14, marginBottom: 14,
+                    background: t.card, border: `1px solid ${t.border}`,
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: fs(13), color: t.textDim, marginBottom: 2 }}>{selectedDateLabel}</div>
+                    <div style={{ fontSize: fs(15), fontWeight: 600, color: t.textDim }}>Rest Day</div>
+                    <button onClick={logPastSession}
+                      style={{
+                        marginTop: 10, padding: "8px 16px", borderRadius: 8,
+                        border: `1px dashed ${t.accent}40`, background: "transparent",
+                        color: t.accent, fontSize: fs(12), cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}>
+                      Actually worked out? Log it
+                    </button>
+                  </div>
+                );
+              }
+
+              // Today or future — check if there's already logged exercise data
+              let preDone = 0;
+              const preExercises = !isFutureDate ? (WORKOUT_DATA[week]?.[day]?.exercises || []) : [];
+              const preTotal = preExercises.length;
+              if (!isFutureDate) {
+                preExercises.forEach(ex => {
+                  const dn = displayName(ex.name);
+                  let allDone = ex.sets > 0;
+                  for (let si = 0; si < ex.sets; si++) {
+                    if (!logData[`${selectedDate}-${dn}-${si}`]?.done) { allDone = false; break; }
+                  }
+                  if (allDone) preDone++;
+                });
+              }
+              const prePct = preTotal > 0 ? Math.round((preDone / preTotal) * 100) : 0;
+              const hasProgress = preDone > 0;
+
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <button onClick={isFutureDate ? null : startSession}
+                    style={{
+                      width: "100%", padding: "14px", borderRadius: 14,
+                      border: `2px dashed ${t.accent}40`, background: hasProgress ? t.success + "10" : t.accentGlow,
+                      color: hasProgress ? t.success : t.accent, fontSize: fs(14), fontWeight: 600,
+                      cursor: isFutureDate ? "default" : "pointer",
+                      fontFamily: "inherit", display: "flex", alignItems: "center",
+                      justifyContent: "center", gap: 8,
+                      borderColor: hasProgress ? t.success + "40" : t.accent + "40",
+                    }}>
+                    {isFutureDate
+                      ? `Upcoming — W${week} D${day} (${dayData?.label})`
+                      : hasProgress
+                        ? `▶ Resume Workout — ${prePct}% (${preDone}/${preTotal})`
+                        : `▶ Start Workout — W${week} D${day} (${dayData?.label})`
+                    }
+                  </button>
+                  {hasProgress && !isFutureDate && (
+                    <div style={{
+                      marginTop: 6, height: 4, borderRadius: 2,
+                      background: t.border, overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", borderRadius: 2,
+                        width: `${prePct}%`, background: t.success,
+                      }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* Week & Day Selector */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              <button onClick={() => setShowWeekPicker(!showWeekPicker)}
+                style={{
+                  flex: 1, padding: "10px 14px", borderRadius: 12, border: `1px solid ${t.border}`,
+                  background: t.card, color: t.text, fontSize: fs(14), fontFamily: "inherit",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Week {week}</span>
+                <span style={{ fontSize: fs(10), color: t.textDim }}>▼</span>
+              </button>
+            </div>
+
+            {showWeekPicker && (
+              <div style={{
+                background: t.card, border: `1px solid ${t.border}`, borderRadius: 14,
+                padding: 10, marginBottom: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6,
+              }}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(w => (
+                  <button key={w} onClick={() => {
+                      setWeek(w); setShowWeekPicker(false);
+                      if (selectedDate === todayStr) {
+                        setNextWorkoutPos({ week: w, day });
+                      }
+                      if (selectedSession) {
+                        setSessionLog(prev => ({ ...prev, [selectedDate]: { ...prev[selectedDate], week: w } }));
+                      }
+                    }}
+                    style={{
+                      padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+                      background: week === w ? t.accent : t.cardAlt,
+                      color: week === w ? "#fff" : t.textDim, fontSize: fs(13), fontWeight: 600,
+                      fontFamily: "inherit",
+                    }}
+                  >{w}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Day Pills */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto" }}>
+              {[1, 2, 3, 4, 5, 6].map(d => {
+                const dl = weekData?.[d]?.label || "";
+                const short = dl.replace("LEGS", "LEG").replace("TORSO", "TOR").replace("ARMS", "ARM").replace(" (DELOAD)", "");
+                return (
+                  <button key={d} onClick={() => {
+                      setDay(d); setExpandedEx(null);
+                      if (selectedDate === todayStr) {
+                        setNextWorkoutPos({ week, day: d });
+                      }
+                      // Update session if one exists (active or completed)
+                      if (selectedSession) {
+                        setSessionLog(prev => ({ ...prev, [selectedDate]: { ...prev[selectedDate], day: d } }));
+                      }
+                    }}
+                    style={{
+                      padding: "8px 12px", borderRadius: 10, border: day === d ? "none" : `1px solid ${t.border}`,
+                      background: day === d ? t.gradient : t.card,
+                      color: day === d ? "#fff" : t.textDim, fontSize: fs(11), fontWeight: 600,
+                      cursor: "pointer", whiteSpace: "nowrap", fontFamily: "'DM Mono', monospace",
+                      letterSpacing: 0.5, flexShrink: 0,
+                    }}
+                  >
+                    D{d} {short}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Day Header */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: fs(20), fontWeight: 700 }}>Day {day}</div>
+              <div style={{ fontSize: fs(14), color: t.accent, fontWeight: 500 }}>{dayData?.label}</div>
+            </div>
+
+            {/* Exercise List */}
+            {exercises.map((ex, idx) => {
+              const isExpanded = expandedEx === idx;
+              const currentDisplay = displayName(ex.name);
+              const isSwapped = currentDisplay !== ex.name;
+              const isBW = currentDisplay.startsWith("BW:");
+              const isTimedEx = isBW && /hold|plank|l-sit|wall sit|iso/i.test(currentDisplay);
+              const prevResult = getPrevWeekResult(currentDisplay);
+              const history = getExerciseHistory(currentDisplay);
+              // Check if all sets of this exercise are done
+              let exAllDone = ex.sets > 0;
+              for (let si = 0; si < ex.sets; si++) {
+                if (!logData[`${selectedDate}-${currentDisplay}-${si}`]?.done) { exAllDone = false; break; }
+              }
+
+              return (
+                <div key={idx} style={{
+                  background: t.card, borderRadius: 14, marginBottom: 8,
+                  border: `1px solid ${isExpanded ? t.accent + "40" : exAllDone ? t.success + "40" : t.border}`,
+                  overflow: "hidden", transition: "border-color 0.2s",
+                }}>
+                  {/* Exercise Row */}
+                  <button
+                    onClick={() => setExpandedEx(isExpanded ? null : idx)}
+                    style={{
+                      width: "100%", padding: "14px 16px", border: "none",
+                      background: "transparent", cursor: "pointer", display: "flex",
+                      alignItems: "center", gap: 12, color: t.text, fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      background: exAllDone ? t.success : t.accentGlow,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: exAllDone ? fs(14) : fs(12), fontWeight: 700,
+                      color: exAllDone ? "#fff" : t.accent, flexShrink: 0,
+                      fontFamily: "'DM Mono', monospace",
+                    }}>
+                      {exAllDone ? "✓" : idx + 1}
+                    </div>
+                    <div style={{ flex: 1, textAlign: "left" }}>
+                      <div style={{ fontSize: fs(14), fontWeight: 500, lineHeight: 1.3 }}>
+                        {isSwapped && <span style={{ color: t.warning, fontSize: fs(10), marginRight: 4 }}>⇄</span>}
+                        {isBW && <span style={{
+                          fontSize: fs(9), fontWeight: 700, color: t.accent, background: t.accentGlow,
+                          padding: "1px 5px", borderRadius: 4, marginRight: 4, verticalAlign: "middle",
+                          fontFamily: "'DM Mono', monospace",
+                        }}>BW</span>}
+                        {currentDisplay.replace(/^BW:\s*/, "")}
+                      </div>
+                      <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+                        {(() => {
+                          // Check if any sets are logged for this exercise today
+                          const loggedSets = [];
+                          for (let si = 0; si < ex.sets; si++) {
+                            const lk = `${selectedDate}-${currentDisplay}-${si}`;
+                            const lv = logData[lk];
+                            if (lv?.done && (lv.weight || lv.reps)) {
+                              loggedSets.push(lv);
+                            }
+                          }
+                          if (loggedSets.length > 0) {
+                            // Show actual logged data
+                            const summary = loggedSets.map((s, i) =>
+                              isBW
+                                ? `${s.reps || "?"}${isTimedEx ? "s" : ""}`
+                                : `${s.weight || 0}×${s.reps || "?"}`
+                            ).join(", ");
+                            return <span style={{ color: t.success }}>{summary}{isBW && loggedSets[0]?.weight ? ` (+${loggedSets[0].weight})` : !isBW ? " lbs" : ""}</span>;
+                          }
+                          // Show prescribed reps
+                          return (
+                            <>
+                              {ex.sets}×{ex.reps}{isTimedEx ? "s" : ""}
+                              {!isBW && ex.result && <span style={{ color: t.accent, marginLeft: 8 }}>{ex.result} lbs</span>}
+                              {!ex.result && prevResult && <span style={{ color: t.textMuted, marginLeft: 8 }}>prev: {prevResult}</span>}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: fs(12), color: t.textDim, transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+                  </button>
+
+                  {/* Expanded Detail */}
+                  {isExpanded && (
+                    <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${t.border}` }}>
+                      {/* Notes */}
+                      {ex.notes && (
+                        <div style={{
+                          margin: "12px 0 10px", padding: "8px 12px", borderRadius: 8,
+                          background: t.accentGlow, fontSize: fs(12), color: t.accent,
+                          fontStyle: "italic",
+                        }}>
+                          {ex.notes}
+                        </div>
+                      )}
+
+                      {/* Previous week */}
+                      {prevResult && (
+                        <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 10, marginBottom: 6 }}>
+                          Last: <span style={{ color: t.text, fontWeight: 600 }}>{prevResult}</span>
+                        </div>
+                      )}
+
+                      {/* Set Logging */}
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1, fontFamily: "'DM Mono', monospace" }}>Log Sets</div>
+                        {Array.from({ length: ex.sets }, (_, si) => {
+                          const logKey = `${selectedDate}-${currentDisplay}-${si}`;
+                          const val = logData[logKey] || {};
+                          return (
+                            <div key={si} style={{
+                              display: "flex", gap: 8, marginBottom: 6, alignItems: "center",
+                            }}>
+                              <span style={{
+                                width: 24, fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace",
+                              }}>S{si + 1}</span>
+                              <input
+                                type="number" placeholder={isBW ? "+lbs" : "Weight"}
+                                value={val.weight || ""}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  setLogData(prev => {
+                                    const cur = prev[logKey] || {};
+                                    const next = { ...prev, [logKey]: { ...cur, weight: v } };
+                                    if (!cur.done && cur.reps && (v || isBW)) {
+                                      next[logKey] = { ...next[logKey], done: true, completedAt: new Date().toISOString(), date: selectedDate };
+                                      // Auto-check Workout habit at 50%+ exercise completion
+                                      let tEx = exercises.length, dEx = 0;
+                                      exercises.forEach(e2 => {
+                                        const dn2 = displayName(e2.name);
+                                        let ad = e2.sets > 0;
+                                        for (let s2 = 0; s2 < e2.sets; s2++) { if (!next[`${selectedDate}-${dn2}-${s2}`]?.done) { ad = false; break; } }
+                                        if (ad) dEx++;
+                                      });
+                                      if (tEx > 0 && (dEx / tEx) >= 0.5) toggleHabit(3, true);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                style={{
+                                  flex: 1, padding: "8px 10px", borderRadius: 8,
+                                  border: `1px solid ${t.border}`, background: t.cardAlt,
+                                  color: t.text, fontSize: fs(14), fontFamily: "'DM Mono', monospace",
+                                  outline: "none",
+                                }}
+                              />
+                              <input
+                                type="number" placeholder={isTimedEx ? "Secs" : "Reps"}
+                                value={val.reps || ""}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  setLogData(prev => {
+                                    const cur = prev[logKey] || {};
+                                    const next = { ...prev, [logKey]: { ...cur, reps: v } };
+                                    if (!cur.done && v && (cur.weight || isBW)) {
+                                      next[logKey] = { ...next[logKey], done: true, completedAt: new Date().toISOString(), date: selectedDate };
+                                      // Auto-check Workout habit at 50%+ exercise completion
+                                      let tEx = exercises.length, dEx = 0;
+                                      exercises.forEach(e2 => {
+                                        const dn2 = displayName(e2.name);
+                                        let ad = e2.sets > 0;
+                                        for (let s2 = 0; s2 < e2.sets; s2++) { if (!next[`${selectedDate}-${dn2}-${s2}`]?.done) { ad = false; break; } }
+                                        if (ad) dEx++;
+                                      });
+                                      if (tEx > 0 && (dEx / tEx) >= 0.5) toggleHabit(3, true);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                style={{
+                                  width: 70, padding: "8px 10px", borderRadius: 8,
+                                  border: `1px solid ${t.border}`, background: t.cardAlt,
+                                  color: t.text, fontSize: fs(14), fontFamily: "'DM Mono', monospace",
+                                  outline: "none",
+                                }}
+                              />
+                              <button
+                                onClick={() => {
+                                  const now = new Date().toISOString();
+                                  const willBeDone = !logData[logKey]?.done;
+                                  setLogData(prev => {
+                                    const next = { ...prev, [logKey]: { ...prev[logKey], done: willBeDone, completedAt: willBeDone ? now : null, date: selectedDate } };
+                                    // Auto-check Workout habit at 50%+ exercise completion
+                                    if (willBeDone && (selectedSession?.status === "active" || selectedDate === todayStr)) {
+                                      let totalEx = exercises.length, doneEx = 0;
+                                      exercises.forEach(e => {
+                                        const dn = displayName(e.name);
+                                        let allDone = e.sets > 0;
+                                        for (let s = 0; s < e.sets; s++) {
+                                          if (!next[`${selectedDate}-${dn}-${s}`]?.done) { allDone = false; break; }
+                                        }
+                                        if (allDone) doneEx++;
+                                      });
+                                      if (totalEx > 0 && (doneEx / totalEx) >= 0.5) toggleHabit(3, true);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                style={{
+                                  width: 32, height: 32, borderRadius: 8, border: "none",
+                                  background: logData[logKey]?.done ? t.success : t.cardAlt,
+                                  color: logData[logKey]?.done ? "#fff" : t.textMuted,
+                                  cursor: "pointer", fontSize: fs(14), display: "flex",
+                                  alignItems: "center", justifyContent: "center",
+                                }}
+                              >✓</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Progress Mini Chart */}
+                      {history.length >= 2 && (
+                        <div style={{ marginTop: 14 }}>
+                          <MiniChart data={history.map(h => h.result)} color={t.accent} label={isBW ? (isTimedEx ? "Duration Progress" : "Rep Progress") : "Weight Progress (lbs)"} />
+                        </div>
+                      )}
+
+                      {/* Swap Exercise Button */}
+                      <button
+                        onClick={() => setShowAlts(showAlts === idx ? null : idx)}
+                        style={{
+                          marginTop: 12, width: "100%", padding: "10px", borderRadius: 10,
+                          border: `1px dashed ${t.border}`, background: "transparent",
+                          color: t.textDim, fontSize: fs(13), cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        ⇄ {showAlts === idx ? "Hide Alternatives" : "Swap Exercise"}
+                      </button>
+
+                      {/* Alternatives Panel */}
+                      {showAlts === idx && (
+                        <div style={{ marginTop: 8 }}>
+                          {(ALTERNATIVES[ex.name] || []).map((alt, ai) => (
+                            <button key={ai} onClick={() => swapExercise(ex.name, alt)}
+                              style={{
+                                display: "block", width: "100%", padding: "10px 12px",
+                                marginBottom: 4, borderRadius: 8, border: `1px solid ${t.border}`,
+                                background: t.cardAlt, color: t.text, fontSize: fs(13),
+                                cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                              }}
+                            >{alt}</button>
+                          ))}
+                          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                            <input
+                              type="text" placeholder="Custom exercise..."
+                              value={customAlt}
+                              onChange={e => setCustomAlt(e.target.value)}
+                              style={{
+                                flex: 1, padding: "8px 10px", borderRadius: 8,
+                                border: `1px solid ${t.border}`, background: t.cardAlt,
+                                color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none",
+                              }}
+                            />
+                            <button
+                              onClick={() => { if (customAlt.trim()) { swapExercise(ex.name, customAlt.trim()); setCustomAlt(""); } }}
+                              style={{
+                                padding: "8px 14px", borderRadius: 8, border: "none",
+                                background: t.gradient, color: "#fff", fontSize: fs(13),
+                                fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                              }}
+                            >Add</button>
+                          </div>
+                          {isSwapped && (
+                            <button
+                              onClick={() => { const key = `${week}-${day}-${ex.name}`; setSwappedExercises(prev => { const n = { ...prev }; delete n[key]; return n; }); setShowAlts(null); }}
+                              style={{
+                                marginTop: 6, width: "100%", padding: "8px", borderRadius: 8,
+                                border: "none", background: t.warning + "20", color: t.warning,
+                                fontSize: fs(12), cursor: "pointer", fontFamily: "inherit",
+                              }}
+                            >↩ Revert to {ex.name}</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ═══ HABITS TAB ═══ */}
+        {tab === "habits" && (
+          <div style={{ padding: "16px 16px 0" }}>
+            
+            {/* ── Daily Weight Logger ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 16, marginBottom: 12,
+              border: `1px solid ${selectedWeight ? t.success + "40" : t.accent + "40"}`,
+              transition: "all 0.3s", overflow: "hidden",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: fs(20) }}>⚖️</span>
+                  <div>
+                    <div style={{ fontSize: fs(14), fontWeight: 600 }}>Daily Weigh-In</div>
+                    <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                      {selectedDateLabel}
+                    </div>
+                  </div>
+                </div>
+                {selectedWeight && (
+                  <div style={{
+                    padding: "4px 10px", borderRadius: 20, background: t.success + "20",
+                    color: t.success, fontSize: fs(11), fontWeight: 600, fontFamily: "'DM Mono', monospace",
+                    display: "flex", alignItems: "center", gap: 4,
+                    animation: weightLogAnim ? "pulse 0.5s ease" : "none",
+                  }}>
+                    ✓ Logged
+                  </div>
+                )}
+              </div>
+
+              {/* Current weight display */}
+              {selectedWeight ? (
+                <div style={{ textAlign: "center", marginBottom: 12 }}>
+                  <div style={{
+                    fontSize: fs(42), fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                    background: t.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                    lineHeight: 1.1,
+                    animation: weightLogAnim ? "pulse 0.5s ease" : "none",
+                  }}>
+                    {selectedWeight}
+                  </div>
+                  <div style={{ fontSize: fs(13), color: t.textDim }}>lbs</div>
+                  {weightChange !== null && (
+                    <div style={{
+                      fontSize: fs(13), fontWeight: 600, marginTop: 4,
+                      color: weightChange > 0 ? t.success : weightChange < 0 ? t.danger : t.textDim,
+                      fontFamily: "'DM Mono', monospace",
+                    }}>
+                      {weightChange > 0 ? "+" : ""}{weightChange.toFixed(1)} from previous
+                    </div>
+                  )}
+                  {totalChange !== null && (
+                    <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 2 }}>
+                      {totalChange > 0 ? "+" : ""}{totalChange.toFixed(1)} lbs total ({sortedWeights.length} days tracked)
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "8px 0 12px" }}>
+                  <div style={{ fontSize: fs(14), color: t.textDim, marginBottom: 8 }}>
+                    {prevWeightEntry ? `Previous: ${prevWeightEntry.weight} lbs` : "No previous entry"}
+                  </div>
+                </div>
+              )}
+
+              {/* Weight Input Controls */}
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <button onClick={() => adjustWeight(-0.5)}
+                  style={{
+                    width: 40, height: 44, borderRadius: 12, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(16), fontWeight: 600,
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "'DM Mono', monospace", flexShrink: 0,
+                  }}>−</button>
+                <button onClick={() => adjustWeight(-0.1)}
+                  style={{
+                    width: 34, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.textDim, fontSize: fs(10), fontWeight: 500,
+                    cursor: "pointer", fontFamily: "'DM Mono', monospace", flexShrink: 0,
+                  }}>−.1</button>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={prevWeightEntry ? String(prevWeightEntry.weight) : "160.0"}
+                  value={weightInput}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/[^0-9.]/g, "");
+                    setWeightInput(raw);
+                  }}
+                  onBlur={commitWeightInput}
+                  onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
+                  style={{
+                    flex: 1, minWidth: 0, padding: "10px 4px", borderRadius: 12, textAlign: "center",
+                    border: `2px solid ${selectedWeight ? t.success + "60" : t.accent + "40"}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(18), fontWeight: 700,
+                    fontFamily: "'DM Mono', monospace", outline: "none",
+                    transition: "border-color 0.3s", boxSizing: "border-box",
+                  }}
+                />
+                <button onClick={() => adjustWeight(0.1)}
+                  style={{
+                    width: 34, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.textDim, fontSize: fs(10), fontWeight: 500,
+                    cursor: "pointer", fontFamily: "'DM Mono', monospace", flexShrink: 0,
+                  }}>+.1</button>
+                <button onClick={() => adjustWeight(0.5)}
+                  style={{
+                    width: 40, height: 44, borderRadius: 12, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(16), fontWeight: 600,
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "'DM Mono', monospace", flexShrink: 0,
+                  }}>+</button>
+              </div>
+
+              {/* Quick set buttons */}
+              {!selectedWeight && prevWeightEntry && (
+                <button onClick={() => logWeight(prevWeightEntry.weight)}
+                  style={{
+                    width: "100%", marginTop: 8, padding: "10px", borderRadius: 10,
+                    border: `1px dashed ${t.border}`, background: "transparent",
+                    color: t.textDim, fontSize: fs(13), cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  Same as last ({prevWeightEntry.weight} lbs)
+                </button>
+              )}
+
+              {/* Mini weight trend */}
+              {last7Weights.length >= 2 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>LAST {last7Weights.length} ENTRIES</span>
+                    <span style={{ fontSize: fs(10), color: t.textDim }}>
+                      {last7Weights[0].date.split("-").slice(1).join("/")} → {last7Weights[last7Weights.length-1].date.split("-").slice(1).join("/")}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 32 }}>
+                    {last7Weights.map((entry, i) => {
+                      const min = Math.min(...last7Weights.map(e => e.weight));
+                      const max = Math.max(...last7Weights.map(e => e.weight));
+                      const range = max - min || 1;
+                      const pct = ((entry.weight - min) / range) * 70 + 30;
+                      const isToday = entry.date === selectedDate;
+                      return (
+                        <div key={i} style={{
+                          flex: 1, borderRadius: 3,
+                          height: `${pct}%`,
+                          background: isToday ? t.accent : t.accent + "40",
+                          position: "relative",
+                        }}>
+                          {isToday && (
+                            <div style={{
+                              position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)",
+                              fontSize: fs(8), color: t.accent, fontWeight: 700, whiteSpace: "nowrap",
+                            }}>▼</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 10, fontFamily: "'DM Mono', monospace", letterSpacing: 1.5, textTransform: "uppercase" }}>
+              DAILY HABITS
+            </div>
+            {/* Today's Score */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 16,
+              border: `1px solid ${t.border}`, textAlign: "center",
+            }}>
+              <div style={{ fontSize: fs(48), fontWeight: 700, background: t.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                {todayRate}%
+              </div>
+              <div style={{ fontSize: fs(13), color: t.textDim, marginTop: 4 }}>
+                {isToday ? "Today's" : selectedDateLabel + "'s"} Completion · {totalCompletedToday}/{HABIT_LABELS.length}
+              </div>
+              <div style={{
+                height: 6, borderRadius: 3, background: t.cardAlt, marginTop: 12, overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%", borderRadius: 3, background: todayRate >= 80 ? t.success : todayRate >= 50 ? t.warning : t.danger,
+                  width: `${todayRate}%`, transition: "width 0.4s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: fs(11), color: todayRate >= 80 ? t.success : t.warning, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>
+                {todayRate >= 80 ? "TARGET HIT" : `${Math.ceil(HABIT_LABELS.length * 0.8) - totalCompletedToday} more for 80%`}
+              </div>
+            </div>
+
+            {/* Habit Checklist */}
+            {HABIT_LABELS.map((label, idx) => {
+              const isExpanded = expandedHabit === idx;
+              const isWorkout = idx === 3;
+              const isSteps = idx === 2;
+              const isFood = idx === 5;
+              const checked = selectedHabits[idx];
+              const note = getNote(idx);
+              const wSel = getWorkoutSelection();
+              const currentSteps = stepLog[selectedDate] || null;
+
+              return (
+                <div key={idx} style={{
+                  background: t.card, borderRadius: 12, marginBottom: 6,
+                  border: `1px solid ${checked ? t.success + "40" : isExpanded ? t.accent + "40" : t.border}`,
+                  transition: "all 0.2s", overflow: "hidden",
+                }}>
+                  {/* Main row */}
+                  <div
+                    style={{
+                      display: "flex", alignItems: "center", gap: 14, width: "100%",
+                      padding: "14px 16px", cursor: "pointer",
+                    }}
+                  >
+                    {/* Checkbox */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleHabit(idx, !checked);
+                        if (isWorkout && checked) {
+                          setWorkoutSelection(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+                        }
+                        if (isSteps && checked) {
+                          setStepLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+                        }
+                      }}
+                      style={{
+                        width: 28, height: 28, borderRadius: 8, display: "flex",
+                        alignItems: "center", justifyContent: "center", fontSize: fs(16),
+                        background: checked ? t.success : t.cardAlt,
+                        transition: "background 0.2s", flexShrink: 0,
+                      }}>
+                      {checked ? "✓" : HABIT_ICONS[idx]}
+                    </div>
+
+                    {/* Label + meta */}
+                    <div style={{ flex: 1, textAlign: "left" }}
+                      onClick={() => setExpandedHabit(isExpanded ? null : idx)}>
+                      <div style={{
+                        fontSize: fs(14), fontWeight: 500,
+                        textDecoration: checked ? "line-through" : "none",
+                        opacity: checked ? 0.6 : 1,
+                      }}>
+                        {label}
+                        {isWorkout && wSel && (
+                          <span style={{ fontSize: fs(12), color: t.accent, fontWeight: 600, marginLeft: 6 }}>
+                            — D{wSel.day} {wSel.label}
+                          </span>
+                        )}
+                        {isSteps && currentSteps && (
+                          <span style={{
+                            fontSize: fs(12), fontWeight: 600, marginLeft: 6,
+                            color: currentSteps >= 10000 ? t.success : t.warning,
+                          }}>
+                            — {currentSteps.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                        {habitStreaks[idx]}d streak · {habitRates[idx]}% rate
+                        {note && !isExpanded && <span style={{ color: t.accent }}> · 📝</span>}
+                      </div>
+                    </div>
+
+                    {/* Mini chart + expand arrow */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}
+                      onClick={() => setExpandedHabit(isExpanded ? null : idx)}>
+                      <div style={{ width: 40, height: 20, borderRadius: 4, overflow: "hidden" }}>
+                        {(() => {
+                          const bars = [];
+                          for (let i = 6; i >= 0; i--) {
+                            const d = new Date(selectedDate + "T12:00:00");
+                            d.setDate(d.getDate() - i);
+                            const ds = toLocalDateStr(d);
+                            bars.push(habitLog[ds]?.[idx] ? 1 : 0);
+                          }
+                          return (
+                            <div style={{ display: "flex", gap: 2, height: "100%", alignItems: "flex-end" }}>
+                              {bars.map((v, i) => (
+                                <div key={i} style={{
+                                  flex: 1, height: v ? "100%" : "30%",
+                                  borderRadius: 2,
+                                  background: v ? t.success + "60" : t.textMuted + "30",
+                                }} />
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <span style={{
+                        fontSize: fs(12), color: t.textDim,
+                        transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                        transition: "transform 0.2s",
+                      }}>▼</span>
+                    </div>
+                  </div>
+
+                  {/* Expanded area */}
+                  {isExpanded && (
+                    <div style={{
+                      padding: "0 16px 14px",
+                      borderTop: `1px solid ${t.border}`,
+                      marginTop: -2,
+                      paddingTop: 12,
+                    }}>
+                      {/* Workout selector (only for Workout habit) */}
+                      {isWorkout && (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                            SELECT WORKOUT
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                            {WORKOUT_DAY_OPTIONS.map(opt => {
+                              const isActive = wSel?.day === opt.day;
+                              return (
+                                <button key={opt.day}
+                                  onClick={() => selectWorkout(opt)}
+                                  style={{
+                                    padding: "10px 6px", borderRadius: 10,
+                                    border: isActive ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                                    background: isActive ? t.accentGlow : t.cardAlt,
+                                    color: isActive ? t.accent : t.text,
+                                    cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                                    fontSize: fs(12), fontWeight: isActive ? 700 : 500,
+                                    textAlign: "center",
+                                  }}>
+                                  <div style={{ fontSize: fs(14), fontWeight: 700 }}>D{opt.day}</div>
+                                  <div style={{ fontSize: fs(10), marginTop: 2, color: isActive ? t.accent : t.textDim }}>{opt.label}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {/* Rest day option */}
+                          <button
+                            onClick={() => {
+                              setWorkoutSelection(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+                              toggleHabit(3, false);
+                            }}
+                            style={{
+                              width: "100%", marginTop: 6, padding: "8px", borderRadius: 8,
+                              border: `1px dashed ${t.border}`, background: "transparent",
+                              color: t.textDim, fontSize: fs(11), cursor: "pointer", fontFamily: "inherit",
+                            }}>
+                            🛌 Rest Day — no workout
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Step counter (only for 10K Steps habit) */}
+                      {isSteps && (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                            STEP COUNT
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <button onClick={(e) => {
+                              e.stopPropagation();
+                              const cur = currentSteps || 0;
+                              const newVal = Math.max(0, cur - 1000);
+                              setStepLog(prev => ({ ...prev, [selectedDate]: newVal }));
+                              toggleHabit(2, newVal >= 10000);
+                            }} style={{
+                              width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                              background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
+                              cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                            }}>−</button>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={currentSteps || ""}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => {
+                                const v = parseInt(e.target.value) || 0;
+                                setStepLog(prev => ({ ...prev, [selectedDate]: v }));
+                                toggleHabit(2, v >= 10000);
+                              }}
+                              style={{
+                                flex: 1, padding: "10px 8px", borderRadius: 10, textAlign: "center",
+                                border: `2px solid ${currentSteps >= 10000 ? t.success + "60" : t.border}`,
+                                background: t.cardAlt, color: t.text, fontSize: fs(20), fontWeight: 700,
+                                fontFamily: "'DM Mono', monospace", outline: "none",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                            <button onClick={(e) => {
+                              e.stopPropagation();
+                              const cur = currentSteps || 0;
+                              const newVal = cur + 1000;
+                              setStepLog(prev => ({ ...prev, [selectedDate]: newVal }));
+                              toggleHabit(2, newVal >= 10000);
+                            }} style={{
+                              width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                              background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
+                              cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                            }}>+</button>
+                          </div>
+                          {/* Progress bar to 10K */}
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{
+                              height: 6, borderRadius: 3, background: t.cardAlt, overflow: "hidden",
+                            }}>
+                              <div style={{
+                                height: "100%", borderRadius: 3,
+                                background: currentSteps >= 10000 ? t.success : t.accent,
+                                width: `${Math.min(100, ((currentSteps || 0) / 10000) * 100)}%`,
+                                transition: "width 0.3s ease",
+                              }} />
+                            </div>
+                            <div style={{
+                              display: "flex", justifyContent: "space-between", marginTop: 4,
+                              fontSize: fs(10), fontFamily: "'DM Mono', monospace",
+                              color: currentSteps >= 10000 ? t.success : t.textDim,
+                            }}>
+                              <span>{currentSteps >= 10000 ? "✓ Goal reached!" : `${(10000 - (currentSteps || 0)).toLocaleString()} to go`}</span>
+                              <span>10,000</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Food Tracker (only for Track Food habit) */}
+                      {isFood && (
+                        <div style={{ marginBottom: 10 }} onClick={e => e.stopPropagation()}>
+                          <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                            FOOD TRACKER
+                          </div>
+
+                          {/* Input row: mic + text + send */}
+                          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                            <button onClick={() => isListening ? null : startListening()} style={{
+                              width: 44, height: 44, borderRadius: 12, border: `1px solid ${isListening ? t.danger : t.border}`,
+                              background: isListening ? t.danger + "20" : t.cardAlt, color: isListening ? t.danger : t.text,
+                              fontSize: fs(18), cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                              animation: isListening ? "pulse 1s infinite" : "none",
+                            }}>🎙</button>
+                            <input
+                              type="text"
+                              placeholder={isListening ? "Listening..." : "What did you eat?"}
+                              value={foodInput}
+                              onChange={e => setFoodInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter" && foodInput.trim()) estimateFood(foodInput.trim()); }}
+                              style={{
+                                flex: 1, padding: "10px 12px", borderRadius: 12,
+                                border: `1px solid ${t.border}`, background: t.cardAlt,
+                                color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                            <button onClick={() => foodInput.trim() && estimateFood(foodInput.trim())} disabled={!foodInput.trim() || foodLoading} style={{
+                              width: 44, height: 44, borderRadius: 12, border: `1px solid ${t.accent}`,
+                              background: foodInput.trim() ? t.accent : t.cardAlt,
+                              color: foodInput.trim() ? "#fff" : t.textDim,
+                              fontSize: fs(16), cursor: foodInput.trim() ? "pointer" : "default",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              opacity: foodLoading ? 0.5 : 1,
+                            }}>{foodLoading ? "⏳" : "→"}</button>
+                          </div>
+
+                          {/* Error message */}
+                          {foodError && (
+                            <div style={{
+                              padding: "8px 12px", borderRadius: 10, marginBottom: 10,
+                              background: t.danger + "15", border: `1px solid ${t.danger}30`,
+                              color: t.danger, fontSize: fs(12),
+                            }}>{foodError}</div>
+                          )}
+
+                          {/* Pending result preview */}
+                          {foodPending && (
+                            <div style={{
+                              borderRadius: 12, border: `1px solid ${t.accent}40`,
+                              background: t.accent + "08", overflow: "hidden", marginBottom: 10,
+                            }}>
+                              <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.accent}20` }}>
+                                <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>
+                                  DETECTED — {foodPending.text}
+                                </div>
+                              </div>
+                              {foodPending.items.map((item, i) => (
+                                <div key={i} style={{
+                                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                                  padding: "8px 12px", borderBottom: i < foodPending.items.length - 1 ? `1px solid ${t.border}30` : "none",
+                                }}>
+                                  <div style={{ fontSize: fs(13), fontWeight: 500, textTransform: "capitalize" }}>{item.name}</div>
+                                  <div style={{ display: "flex", gap: 10, fontSize: fs(11), fontFamily: "'DM Mono', monospace", color: t.textDim }}>
+                                    <span style={{ color: t.accent }}>{item.cal}cal</span>
+                                    <span>{item.protein}p</span>
+                                    <span>{item.carbs}c</span>
+                                    <span>{item.fat}f</span>
+                                  </div>
+                                </div>
+                              ))}
+                              <div style={{
+                                display: "flex", justifyContent: "space-between", alignItems: "center",
+                                padding: "8px 12px", borderTop: `1px solid ${t.accent}20`, background: t.accent + "10",
+                              }}>
+                                <div style={{ fontSize: fs(12), fontWeight: 600 }}>
+                                  Total: {foodPending.cal} cal · {foodPending.protein}p · {foodPending.carbs}c · {foodPending.fat}f
+                                </div>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button onClick={() => { setFoodPending(null); setFoodInput(""); }} style={{
+                                    padding: "6px 12px", borderRadius: 8, border: `1px solid ${t.border}`,
+                                    background: "transparent", color: t.textDim, fontSize: fs(11),
+                                    cursor: "pointer", fontFamily: "inherit",
+                                  }}>Cancel</button>
+                                  <button onClick={addFoodEntry} style={{
+                                    padding: "6px 14px", borderRadius: 8, border: "none",
+                                    background: t.success, color: "#fff", fontSize: fs(11),
+                                    fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                                  }}>+ Add</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Today's food log */}
+                          {(() => {
+                            const dayEntries = foodLog[selectedDate]?.entries || [];
+                            const dayTotals = getDayFoodTotals(selectedDate);
+                            if (dayEntries.length === 0) return null;
+                            const calPct = Math.min(100, (dayTotals.cal / calorieGoal) * 100);
+                            const calColor = calPct >= 100 ? t.danger : calPct >= 85 ? "#f0ad4e" : t.success;
+                            return (
+                              <div>
+                                {/* Calorie progress bar */}
+                                <div style={{ marginBottom: 10 }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                    <span style={{ fontSize: fs(13), fontWeight: 700, color: calColor }}>
+                                      {dayTotals.cal.toLocaleString()} / {calorieGoal.toLocaleString()} cal
+                                    </span>
+                                    <span style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                                      {Math.max(0, calorieGoal - dayTotals.cal).toLocaleString()} left
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 8, borderRadius: 4, background: t.cardAlt, overflow: "hidden" }}>
+                                    <div style={{
+                                      height: "100%", borderRadius: 4, background: calColor,
+                                      width: `${calPct}%`, transition: "width 0.3s ease",
+                                    }} />
+                                  </div>
+                                  <div style={{
+                                    display: "flex", justifyContent: "space-around", marginTop: 6,
+                                    fontSize: fs(11), fontFamily: "'DM Mono', monospace", color: t.textDim,
+                                  }}>
+                                    <span>🥩 {dayTotals.protein}g P</span>
+                                    <span>🍞 {dayTotals.carbs}g C</span>
+                                    <span>🧈 {dayTotals.fat}g F</span>
+                                  </div>
+                                </div>
+
+                                {/* Entry list */}
+                                <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                                  TODAY'S LOG
+                                </div>
+                                {dayEntries.map(entry => (
+                                  <div key={entry.id} style={{
+                                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                                    padding: "8px 10px", borderRadius: 10, marginBottom: 4,
+                                    background: t.cardAlt, border: `1px solid ${t.border}30`,
+                                  }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {entry.text}
+                                      </div>
+                                      <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
+                                        {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
+                                      </div>
+                                    </div>
+                                    <button onClick={() => removeFoodEntry(entry.id)} style={{
+                                      width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
+                                      background: "transparent", color: t.textDim, fontSize: fs(12),
+                                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                      marginLeft: 8, flexShrink: 0,
+                                    }}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {/* Notes area (all habits) */}
+                      <div>
+                        <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                          {isWorkout ? "WORKOUT NOTES" : isSteps ? "STEP NOTES" : "NOTES"}
+                        </div>
+                        <textarea
+                          value={note}
+                          onChange={e => setNote(idx, e.target.value)}
+                          placeholder={isWorkout
+                            ? "How did it feel? PRs, energy, form notes..."
+                            : isSteps
+                            ? "Walk route, time of day, how you felt..."
+                            : `Notes for ${label.toLowerCase()}...`}
+                          rows={2}
+                          style={{
+                            width: "100%", padding: "10px 12px", borderRadius: 10,
+                            border: `1px solid ${t.border}`, background: t.cardAlt,
+                            color: t.text, fontSize: fs(13), fontFamily: "inherit",
+                            resize: "vertical", outline: "none",
+                            lineHeight: 1.5,
+                            boxSizing: "border-box",
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ═══ PROGRESS TAB ═══ */}
+        {tab === "progress" && (
+          <div style={{ padding: "16px 16px 0" }}>
+            {/* Weight Trend */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: fs(16), fontWeight: 600 }}>Body Weight</div>
+                  <div style={{ fontSize: fs(12), color: t.textDim }}>{sortedWeights.length} entries logged</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {currentWeight && <div style={{ fontSize: fs(24), fontWeight: 700 }}>{currentWeight}</div>}
+                  {totalChange !== null && (
+                    <div style={{ fontSize: fs(12), color: totalChange <= 0 ? t.success : t.danger }}>
+                      {totalChange > 0 ? "+" : ""}{totalChange.toFixed(1)} lbs overall
+                    </div>
+                  )}
+                </div>
+              </div>
+              {allWeights.length >= 2 ? (
+                <MiniChart data={allWeights} color={t.accent} height={80} label="Weight (lbs)" />
+              ) : (
+                <div style={{ textAlign: "center", padding: 20, color: t.textDim, fontSize: fs(13) }}>
+                  Log more weigh-ins to see your trend
+                </div>
+              )}
+            </div>
+
+            {/* Nutrition Summary */}
+            {(() => {
+              const last7 = [];
+              for (let i = 0; i < 7; i++) {
+                const d = new Date(); d.setDate(d.getDate() - i);
+                const ds = d.toISOString().split("T")[0];
+                const t2 = getDayFoodTotals(ds);
+                if (t2.cal > 0) last7.push(t2);
+              }
+              if (last7.length === 0) return null;
+              const avg = {
+                cal: Math.round(last7.reduce((s, d) => s + d.cal, 0) / last7.length),
+                protein: Math.round(last7.reduce((s, d) => s + d.protein, 0) / last7.length),
+                carbs: Math.round(last7.reduce((s, d) => s + d.carbs, 0) / last7.length),
+                fat: Math.round(last7.reduce((s, d) => s + d.fat, 0) / last7.length),
+              };
+              const calData = [];
+              for (let i = 6; i >= 0; i--) {
+                const d = new Date(); d.setDate(d.getDate() - i);
+                const ds = d.toISOString().split("T")[0];
+                const t2 = getDayFoodTotals(ds);
+                if (t2.cal > 0) calData.push(t2.cal);
+              }
+              return (
+                <div style={{
+                  background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+                  border: `1px solid ${t.border}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: fs(16), fontWeight: 600 }}>Nutrition</div>
+                      <div style={{ fontSize: fs(12), color: t.textDim }}>{last7.length} day avg (last 7 days)</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: fs(24), fontWeight: 700 }}>{avg.cal.toLocaleString()}</div>
+                      <div style={{ fontSize: fs(12), color: t.textDim }}>cal/day</div>
+                    </div>
+                  </div>
+                  <div style={{
+                    display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: calData.length >= 2 ? 14 : 0,
+                  }}>
+                    {[
+                      { label: "Protein", val: avg.protein + "g", color: "#e74c3c" },
+                      { label: "Carbs", val: avg.carbs + "g", color: "#f39c12" },
+                      { label: "Fat", val: avg.fat + "g", color: "#3498db" },
+                    ].map((m, i) => (
+                      <div key={i} style={{
+                        textAlign: "center", padding: "8px 4px", borderRadius: 10,
+                        background: t.cardAlt, border: `1px solid ${t.border}`,
+                      }}>
+                        <div style={{ fontSize: fs(16), fontWeight: 700, color: m.color }}>{m.val}</div>
+                        <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>{m.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {calData.length >= 2 && (
+                    <MiniChart data={calData} color={t.accent} height={60} label="Calories" />
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Key Lifts Progress */}
+            <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 10 }}>Key Lifts</div>
+            {[
+              { name: "Smith Machine Squat", icon: "🦵" },
+              { name: "Incline Smith Machine Bench Press", icon: "🏋️" },
+              { name: "Strict Press", icon: "💪" },
+              { name: "Smith Machine Romanian Deadlift", icon: "🔥" },
+              { name: "Wide-grip Lat Pulldown", icon: "🏗️" },
+              { name: "Barbell Bicep Curl", icon: "💪" },
+            ].map(({ name, icon }) => {
+              const history = getExerciseHistory(name);
+              const parseWeight = (r) => parseFloat(String(r).split("×")[0]) || parseFloat(r) || null;
+              const latest = history.length > 0 ? history[history.length - 1].result : null;
+              const first = history.length > 0 ? history[0].result : null;
+              const latestNum = parseWeight(latest);
+              const firstNum = parseWeight(first);
+              const change = latestNum && firstNum ? latestNum - firstNum : null;
+              return (
+                <div key={name} style={{
+                  background: t.card, borderRadius: 14, padding: "14px 16px",
+                  marginBottom: 6, border: `1px solid ${t.border}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: history.length >= 2 ? 8 : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: fs(18) }}>{icon}</span>
+                      <div>
+                        <div style={{ fontSize: fs(13), fontWeight: 500 }}>{name.length > 28 ? name.substring(0, 28) + "…" : name}</div>
+                        <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                          {history.length} data points
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      {latest && <div style={{ fontSize: fs(16), fontWeight: 700 }}>{latest}<span style={{ fontSize: fs(11), color: t.textDim }}> lbs</span></div>}
+                      {change !== null && (
+                        <div style={{ fontSize: fs(11), color: change >= 0 ? t.success : t.danger }}>
+                          {change >= 0 ? "+" : ""}{change} lbs
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {history.length >= 2 && <MiniChart data={history.map(h => h.result)} color={t.accent} height={50} label="" />}
+                </div>
+              );
+            })}
+
+            {/* Overall Habit Rate */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginTop: 10,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Habit Consistency ({Object.keys(habitLog).length} days)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {HABIT_LABELS.map((label, idx) => (
+                  <div key={idx} style={{
+                    background: t.cardAlt, borderRadius: 10, padding: "10px 12px",
+                  }}>
+                    <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4 }}>{label}</div>
+                    <div style={{
+                      fontSize: fs(20), fontWeight: 700,
+                      color: habitRates[idx] >= 80 ? t.success : habitRates[idx] >= 60 ? t.warning : t.danger,
+                    }}>
+                      {habitRates[idx]}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Workout Session History */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginTop: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Workout Log</div>
+              <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                {Object.entries(sessionLog)
+                  .filter(([_, s]) => s.status === "completed")
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .slice(0, 20)
+                  .map(([date, session]) => {
+                    const d = new Date(date + "T12:00:00");
+                    const dayLabel = WORKOUT_DATA[session.week]?.[session.day]?.label || `Day ${session.day}`;
+                    return (
+                      <div key={date} style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "8px 0",
+                        borderBottom: `1px solid ${t.border}`,
+                      }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 8, background: t.success + "15",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: fs(12), color: t.success,
+                        }}>✓</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: fs(13), fontWeight: 500 }}>
+                            W{session.week} · {dayLabel}
+                          </div>
+                          <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                            {d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                            {session.completedAt && ` · ${new Date(session.completedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PROFILE TAB ═══ */}
+        {tab === "profile" && (
+          <div style={{ padding: "16px 16px 0", overflowX: "hidden" }}>
+
+            {/* ── Personal Info ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>Personal Info</div>
+              {[
+                { key: "name", label: "Name", placeholder: "Your name", type: "text" },
+                { key: "age", label: "Age", placeholder: "25", type: "number" },
+                { key: "height", label: "Height", placeholder: "5'10\" or 178cm", type: "text" },
+                { key: "goalWeight", label: "Goal Weight (lbs)", placeholder: "155", type: "text" },
+              ].map(field => (
+                <div key={field.key} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>
+                    {field.label}
+                  </div>
+                  <input
+                    type={field.type}
+                    placeholder={field.placeholder}
+                    value={profile[field.key] || ""}
+                    onChange={e => setProfile(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    style={{
+                      width: "100%", padding: "10px 12px", borderRadius: 10,
+                      border: `1px solid ${t.border}`, background: t.cardAlt,
+                      color: t.text, fontSize: fs(14), fontFamily: "inherit", outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              ))}
+              <div style={{ marginBottom: 0 }}>
+                <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>
+                  NOTES / GOALS
+                </div>
+                <textarea
+                  placeholder="Your training goals, injuries to watch for, motivation notes..."
+                  value={profile.notes || ""}
+                  onChange={e => setProfile(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={3}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 10,
+                    border: `1px solid ${t.border}`, background: t.cardAlt,
+                    color: t.text, fontSize: fs(13), fontFamily: "inherit",
+                    resize: "vertical", outline: "none", lineHeight: 1.5,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* ── Program Stats ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>My Progress</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Program Day", value: programDay > 0 && programDay <= 90 ? `${programDay} / 90` : "—" },
+                  { label: "Current Phase", value: phaseLabel },
+                  { label: "Workouts Done", value: Object.values(sessionLog).filter(s => s.status === "completed").length },
+                  { label: "Avg Workout", value: (() => {
+                    const durs = Object.values(sessionLog).filter(s =>
+                      s.status === "completed" && s.startedAt && s.completedAt
+                    ).map(s => Math.floor((new Date(s.completedAt) - new Date(s.startedAt)) / 1000))
+                      .filter(d => d > 0 && d < 86400);
+                    if (durs.length === 0) return "—";
+                    const avg = Math.round(durs.reduce((a, b) => a + b, 0) / durs.length);
+                    const h = Math.floor(avg / 3600), m = Math.floor((avg % 3600) / 60);
+                    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                  })() },
+                  { label: "Days Tracked", value: Object.keys(habitLog).length },
+                  { label: "Start Weight", value: startWeight ? `${startWeight} lbs` : "—" },
+                  { label: "Current Weight", value: currentWeight ? `${currentWeight} lbs` : "—" },
+                ].map((stat, i) => (
+                  <div key={i} style={{
+                    background: t.cardAlt, borderRadius: 10, padding: "10px 12px",
+                  }}>
+                    <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 2 }}>{stat.label}</div>
+                    <div style={{ fontSize: Math.min(fs(18), 24), fontWeight: 700, wordBreak: "break-word" }}>{stat.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Appearance ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`, overflow: "hidden",
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Appearance</div>
+
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Text Size</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 16 }}>
+                {[
+                  { key: "small", label: "S" },
+                  { key: "medium", label: "M" },
+                  { key: "large", label: "L" },
+                  { key: "giant", label: "XL" },
+                  { key: "really", label: "XXL" },
+                ].map(opt => {
+                  const isActive = textSize === opt.key;
+                  return (
+                    <button key={opt.key}
+                      onClick={() => setTextSize(opt.key)}
+                      style={{
+                        padding: "10px 4px", borderRadius: 12,
+                        border: isActive ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                        background: isActive ? t.accentGlow : t.cardAlt,
+                        color: isActive ? t.accent : t.text,
+                        cursor: "pointer", fontFamily: "inherit", textAlign: "center",
+                        minWidth: 0, overflow: "hidden",
+                      }}>
+                      <div style={{
+                        fontSize: ({ small: 12, medium: 14, large: 17, giant: 20, really: 24 })[opt.key] || 14,
+                        fontWeight: 700, marginBottom: 2,
+                      }}>Aa</div>
+                      <div style={{ fontSize: 11, fontWeight: isActive ? 700 : 400 }}>{opt.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Color Theme</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
+                {Object.entries(THEMES).map(([key, th]) => {
+                  const isActive = theme === key;
+                  return (
+                    <button key={key} onClick={() => setTheme(key)}
+                      style={{
+                        padding: "8px 2px", borderRadius: 12, cursor: "pointer",
+                        border: isActive ? `2px solid ${th.accent}` : `1px solid ${t.border}`,
+                        background: isActive ? th.accent + "18" : t.cardAlt,
+                        fontFamily: "inherit", display: "flex", flexDirection: "column",
+                        alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden",
+                      }}>
+                      <span style={{
+                        width: 28, height: 28, borderRadius: "50%", background: th.gradient,
+                        flexShrink: 0,
+                        boxShadow: isActive ? `0 0 10px ${th.accent}60` : "none",
+                      }} />
+                      <span style={{
+                        fontSize: Math.min(fs(10), 14), fontWeight: isActive ? 700 : 400,
+                        color: isActive ? th.accent : t.textDim,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        maxWidth: "100%",
+                      }}>{th.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Workout Mode ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Workout Mode</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+                {[
+                  { key: "gym", label: "Gym", icon: "🏋️", desc: "Full gym equipment" },
+                  { key: "home", label: "Home", icon: "🏠", desc: "Dumbbells & vest" },
+                  { key: "bodyweight", label: "BW", icon: "🤸", desc: "No equipment" },
+                ].map(opt => {
+                  const isActive = workoutMode === opt.key;
+                  return (
+                    <button key={opt.key}
+                      onClick={() => setWorkoutMode(opt.key)}
+                      style={{
+                        padding: "12px 8px", borderRadius: 12, cursor: "pointer",
+                        border: isActive ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                        background: isActive ? t.accentGlow : t.cardAlt,
+                        color: isActive ? t.accent : t.text,
+                        fontFamily: "inherit", textAlign: "center",
+                      }}>
+                      <div style={{ fontSize: fs(20), marginBottom: 4 }}>{opt.icon}</div>
+                      <div style={{ fontSize: fs(13), fontWeight: 700 }}>{opt.label}</div>
+                      <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 2 }}>{opt.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Food Tracker Settings ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Food Tracker</div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>CalorieNinjas API Key</div>
+                <input
+                  type="text"
+                  value={calorieApiKey}
+                  onChange={e => setCalorieApiKey(e.target.value.trim())}
+                  placeholder="Enter API key..."
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 10,
+                    border: `1px solid ${calorieApiKey ? t.success + "60" : t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(13),
+                    fontFamily: "'DM Mono', monospace", outline: "none", boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 4 }}>
+                  Free at <span style={{ color: t.accent }}>calorieninjas.com</span> — 10K requests/month
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>Daily Calorie Goal</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={() => setCalorieGoal(prev => Math.max(500, prev - 100))} style={{
+                    width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
+                    cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                  }}>−</button>
+                  <input
+                    type="number"
+                    value={calorieGoal}
+                    onChange={e => { const v = parseInt(e.target.value) || 2000; setCalorieGoal(Math.max(500, Math.min(10000, v))); }}
+                    style={{
+                      flex: 1, padding: "10px 8px", borderRadius: 10, textAlign: "center",
+                      border: `1px solid ${t.border}`, background: t.cardAlt, color: t.text,
+                      fontSize: fs(20), fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                  <button onClick={() => setCalorieGoal(prev => Math.min(10000, prev + 100))} style={{
+                    width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
+                    cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                  }}>+</button>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Data Management ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>Data</div>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+                All your data is stored locally in your browser. Export it to keep a backup.
+              </div>
+              <button
+                onClick={() => {
+                  const data = {};
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith("sh90_")) try { data[key] = JSON.parse(localStorage.getItem(key)); } catch {}
+                  }
+                  const jsonStr = JSON.stringify(data, null, 2);
+                  if (jsonStr.length > 10 * 1024 * 1024) { alert("Export data is unusually large. Data may be corrupted."); return; }
+                  const blob = new Blob([jsonStr], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `superhuman90-backup-${todayStr}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                style={{
+                  width: "100%", padding: "12px", borderRadius: 10,
+                  border: `1px solid ${t.border}`, background: t.cardAlt,
+                  color: t.text, fontSize: fs(13), fontWeight: 500, cursor: "pointer",
+                  fontFamily: "inherit", display: "flex", alignItems: "center",
+                  justifyContent: "center", gap: 8,
+                }}
+              >
+                Export All Data (JSON)
+              </button>
+            </div>
+
+            {/* ── FAQ ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`, overflow: "hidden",
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>FAQ</div>
+              {[
+                {
+                  q: "What is Superhuman 90?",
+                  a: "A 90-day structured workout and habit tracking program split into 3 phases (4 weeks each). Phase 1 builds your base, Phase 2 introduces exercise variation, and Phase 3 increases volume. Week 12 is a deload.",
+                },
+                {
+                  q: "How does the workout schedule work?",
+                  a: "The program has 72 workouts across 12 weeks, cycling through: Legs A, Torso A, Arms A, Legs B, Torso B, Arms B. Your next workout is always based on what you've completed — not the calendar day. If you miss a day, you pick up where you left off. Miss one day in a week? That becomes your rest day, and you can train on Sunday instead.",
+                },
+                {
+                  q: "What do the colored dots on the calendar mean?",
+                  a: "Each calendar day can show up to 3 small dots. First dot (green) = workout completed. Second dot (accent color) = habits tracked. Third dot (warm color) = weight logged. The highlighted day with 'TODAY' label is the current date. Dots give a quick visual of your consistency at a glance.",
+                },
+                {
+                  q: "How do I log a workout?",
+                  a: "Go to the Workout tab, tap 'Start Workout' for today (or 'Log Workout' for a past date). Expand each exercise to enter weight and reps for each set, then tap the checkmark to mark each set done. Hit 'Finish' when complete.",
+                },
+                {
+                  q: "How do I swap an exercise?",
+                  a: "In the Workout tab, expand any exercise and tap 'Swap Exercise' at the bottom. Choose from suggested alternatives or type a custom exercise name. Swaps are saved per week/day and you can revert anytime.",
+                },
+                {
+                  q: "What does 'beat last week's reps or weight' mean?",
+                  a: "Progressive overload — each week you should try to either add a small amount of weight or get one more rep than last week on your working sets. The app shows your previous result so you know what to beat.",
+                },
+                {
+                  q: "How does the habit tracker work?",
+                  a: "The Habits tab tracks 8 daily habits. Tap the checkbox to toggle each habit. Some habits (Workout, 10K Steps) expand for extra detail. Your streak and completion rate are calculated automatically. Aim for 80%+ daily.",
+                },
+                {
+                  q: "How does weight tracking work?",
+                  a: "Use the weight logger in the Habits tab to record your daily weigh-in. Use the +/- buttons for quick adjustments or type directly (saves when you tap away). The Progress tab shows your weight trend over time.",
+                },
+                {
+                  q: "What are the phases?",
+                  a: "Phase 1 (Weeks 1–4): Foundation — 2 working sets per exercise, learning the movements. Phase 2 (Weeks 5–8): Variation — new exercises introduced, same volume. Phase 3 (Weeks 9–11): Overload — 3+ working sets, intensification techniques. Week 12: Deload — reduced volume for recovery.",
+                },
+                {
+                  q: "Is my data saved?",
+                  a: "All data is stored locally on your device using browser storage. Nothing is sent to a server. If you clear your browser data, your progress will be lost. Consider screenshotting your progress periodically.",
+                },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  borderBottom: i < 9 ? `1px solid ${t.border}` : "none",
+                }}>
+                  <button
+                    onClick={() => setExpandedFaq(expandedFaq === i ? null : i)}
+                    style={{
+                      width: "100%", padding: "12px 0", border: "none", background: "transparent",
+                      color: t.text, fontSize: fs(13), fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", textAlign: "left",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}
+                  >
+                    <span>{item.q}</span>
+                    <span style={{
+                      fontSize: fs(12), color: t.textDim, flexShrink: 0, marginLeft: 8,
+                      transform: expandedFaq === i ? "rotate(180deg)" : "rotate(0deg)",
+                      transition: "transform 0.2s",
+                    }}>▼</span>
+                  </button>
+                  {expandedFaq === i && (
+                    <div style={{
+                      padding: "0 0 12px", fontSize: fs(13), color: t.textDim,
+                      lineHeight: 1.6,
+                    }}>
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* ── Feedback / Bug Report ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Feedback & Bug Reports</div>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+                Found a crash or have a suggestion? Describe the issue below and it will be saved locally for review.
+              </div>
+              {feedbackSent ? (
+                <div style={{
+                  textAlign: "center", padding: "20px 0",
+                }}>
+                  <div style={{ fontSize: fs(32), marginBottom: 8 }}>✓</div>
+                  <div style={{ fontSize: fs(14), fontWeight: 600, color: t.success }}>Feedback Saved</div>
+                  <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>Your report has been saved locally.</div>
+                  <button
+                    onClick={() => setFeedbackSent(false)}
+                    style={{
+                      marginTop: 12, padding: "8px 20px", borderRadius: 8,
+                      border: `1px solid ${t.border}`, background: "transparent",
+                      color: t.textDim, fontSize: fs(12), cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >Submit Another</button>
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    placeholder={"Describe the issue or suggestion...\n\nInclude:\n• What happened\n• What you expected\n• Which tab/screen it occurred on"}
+                    value={feedbackText}
+                    onChange={e => setFeedbackText(e.target.value)}
+                    rows={5}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 10,
+                      border: `1px solid ${t.border}`, background: t.cardAlt,
+                      color: t.text, fontSize: fs(13), fontFamily: "inherit",
+                      resize: "vertical", outline: "none", lineHeight: 1.5,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (feedbackText.trim()) {
+                        const existing = loadState("feedbackLog", []);
+                        existing.push({
+                          date: new Date().toISOString(),
+                          text: feedbackText.trim(),
+                          theme,
+                          selectedDate,
+                        });
+                        saveState("feedbackLog", existing);
+                        setFeedbackText("");
+                        setFeedbackSent(true);
+                      }
+                    }}
+                    style={{
+                      width: "100%", marginTop: 8, padding: "12px", borderRadius: 10,
+                      border: "none", background: feedbackText.trim() ? t.gradient : t.cardAlt,
+                      color: feedbackText.trim() ? "#fff" : t.textMuted,
+                      fontSize: fs(14), fontWeight: 600, cursor: feedbackText.trim() ? "pointer" : "default",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Submit Feedback
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* ── App Version ── */}
+            <div style={{
+              textAlign: "center", padding: "16px 0 8px",
+              fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
+            }}>
+              Superhuman 90 · v1.0
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Bottom Navigation ── */}
+      <div style={{
+        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+        width: "100%", maxWidth: 430, padding: "16px 16px 20px",
+        background: `linear-gradient(transparent, ${t.bg} 30%)`, zIndex: 50,
+      }}>
+        <div style={{
+          display: "flex", background: t.card, borderRadius: 16,
+          border: `1px solid ${t.border}`, padding: 4,
+        }}>
+          {[
+            { id: "habits", label: "Habits", icon: "✅" },
+            { id: "workout", label: "Workout", icon: "🏋️" },
+            { id: "progress", label: "Progress", icon: "📊" },
+            { id: "profile", label: "Me", icon: "👤" },
+          ].map(({ id, label, icon }) => (
+            <button key={id} onClick={() => setTab(id)}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
+                background: tab === id ? t.gradient : "transparent",
+                color: tab === id ? "#fff" : t.textDim,
+                cursor: "pointer", fontSize: Math.min(fs(11), 15), fontWeight: 600, fontFamily: "inherit",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                minWidth: 0, overflow: "hidden",
+              }}
+            >
+              <span style={{ fontSize: fs(16) }}>{icon}</span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<SuperhumanApp />);
+
+  </script>
+</body>
+</html>
