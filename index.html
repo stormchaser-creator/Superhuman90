@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SH90">
   <meta name="theme-color" content="#0ea5e9">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://api.anthropic.com; manifest-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://generativelanguage.googleapis.com; manifest-src 'self';">
   <title>Superhuman90</title>
 
   <!-- PWA Manifest + Icons -->
@@ -1190,26 +1190,20 @@ function SuperhumanApp() {
     syncHabitNote(selectedDate, idx, text);
   };
 
-  // Food tracking helpers — uses Claude AI for nutrition estimation
+  // Food tracking helpers — uses Gemini AI for nutrition estimation
   const estimateFood = async (text) => {
     setFoodLoading(true); setFoodError("");
-    if (!calorieApiKey) { setFoodError("API key not set. Go to Settings to add your Anthropic key."); setFoodLoading(false); return; }
+    if (!calorieApiKey) { setFoodError("API key not set. Go to Settings to add your Gemini key."); setFoodLoading(false); return; }
     try {
       var promptText = "You are a nutrition calculator. The user describes food they ate. Return ONLY valid JSON (no markdown, no explanation) with this exact structure: " +
         '{"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
         "Estimate realistic portions if not specified. Be accurate. User input: " + text;
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": calorieApiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1024,
-          messages: [{ role: "user", content: promptText }],
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { maxOutputTokens: 1024 },
         }),
       });
       if (!res.ok) {
@@ -1217,7 +1211,8 @@ function SuperhumanApp() {
         throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
       }
       var result = await res.json();
-      var responseText = result.content && result.content[0] ? result.content[0].text : "";
+      var responseText = result.candidates && result.candidates[0] && result.candidates[0].content
+        ? result.candidates[0].content.parts[0].text : "";
       // Extract JSON from response (strip any markdown fences if present)
       var jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Could not parse nutrition data");
@@ -3155,10 +3150,10 @@ function SuperhumanApp() {
             }}>
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Food Tracker</div>
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>Anthropic API Key</div>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>Gemini API Key</div>
                 <input
                   type="password"
-                  placeholder="sk-ant-..."
+                  placeholder="AIza..."
                   value={calorieApiKey}
                   onChange={e => setCalorieApiKey(e.target.value.trim())}
                   style={{
@@ -3168,7 +3163,7 @@ function SuperhumanApp() {
                   }}
                 />
                 <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 4 }}>
-                  Needed for AI food tracking. Get one at console.anthropic.com
+                  Needed for AI food tracking. Get one at aistudio.google.com/apikey
                 </div>
               </div>
               <div>
