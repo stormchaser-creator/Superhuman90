@@ -1184,9 +1184,11 @@ function SuperhumanApp() {
   };
 
   // Food tracking helpers — uses Claude AI for nutrition estimation
-  const ANTHROPIC_KEY = "REDACTED_API_KEY";
+  // Key loaded from localStorage — set via Settings tab. Never hardcode API keys.
+  const ANTHROPIC_KEY = localStorage.getItem("sh90_anthropic_key") || "";
   const estimateFood = async (text) => {
     setFoodLoading(true); setFoodError("");
+    if (!ANTHROPIC_KEY) { setFoodError("API key not set. Go to Settings to add your Anthropic key."); setFoodLoading(false); return; }
     try {
       var promptText = "You are a nutrition calculator. The user describes food they ate. Return ONLY valid JSON (no markdown, no explanation) with this exact structure: " +
         '{"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
@@ -3148,16 +3150,20 @@ function SuperhumanApp() {
             }}>
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Food Tracker</div>
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>AI-Powered Nutrition</div>
-                <div style={{
-                  padding: "10px 12px", borderRadius: 10,
-                  border: "1px solid " + t.success + "60",
-                  background: t.cardAlt, fontSize: fs(12), color: t.success,
-                }}>
-                  Active — powered by Claude AI
-                </div>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>Anthropic API Key</div>
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  defaultValue={localStorage.getItem("sh90_anthropic_key") || ""}
+                  onBlur={e => { const v = e.target.value.trim(); if (v) localStorage.setItem("sh90_anthropic_key", v); else localStorage.removeItem("sh90_anthropic_key"); }}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 10, boxSizing: "border-box",
+                    border: `1px solid ${t.border}`, background: t.cardAlt, color: t.text,
+                    fontSize: fs(13), fontFamily: "'DM Mono', monospace",
+                  }}
+                />
                 <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 4 }}>
-                  Describe your food naturally — AI estimates calories and macros
+                  Needed for AI food tracking. Get one at console.anthropic.com
                 </div>
               </div>
               <div>
