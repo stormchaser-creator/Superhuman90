@@ -7,11 +7,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SH90">
   <meta name="theme-color" content="#0ea5e9">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; manifest-src data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://api.anthropic.com; manifest-src 'self';">
   <title>Superhuman90</title>
 
-  <!-- PWA Manifest (inline data URI) -->
-  <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlN1cGVyaHVtYW45MCIsCiAgInNob3J0X25hbWUiOiAiU0g5MCIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjZjBmNGY4IiwKICAidGhlbWVfY29sb3IiOiAiIzBlYTVlOSIsCiAgImljb25zIjogW10KfQ==">
+  <!-- PWA Manifest + Icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 
   <!-- Preload fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,6 +38,7 @@
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/@babel/standalone@7.26.9/babel.min.js" integrity="sha384-pKNXKj7jF9BNMkQyGWg5YLfoPyqBa/gf7wjTSoTGQlwxbZB+sabJuKyOHR6JQvTd" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -80,6 +84,307 @@
     const saveState = (key, value) => {
       try { localStorage.setItem("sh90_" + key, JSON.stringify(value)); } catch {}
     };
+
+    // ── Supabase Setup ──
+    const SUPABASE_URL = "https://xwhotgkmlbqcyjpdhlbt.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3aG90Z2ttbGJxY3lqcGRobGJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNjA5NTksImV4cCI6MjA4NzYzNjk1OX0.VI7sMUCh-IxSCSEouagYNBBIuQExbhF7uePSO0oNuXc";
+    const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+    // Device ID: persistent anonymous identifier
+    const DEFAULT_DEVICE = "aaae86fd-3725-4650-9fbd-2fc8d55efd41";
+    const getDeviceId = () => {
+      var params = new URLSearchParams(window.location.search);
+      var urlDevice = params.get("device");
+      if (urlDevice) {
+        localStorage.setItem("sh90_device_id", urlDevice);
+        window.history.replaceState({}, "", window.location.pathname);
+        return urlDevice;
+      }
+      let id = localStorage.getItem("sh90_device_id");
+      if (!id) {
+        id = DEFAULT_DEVICE;
+        localStorage.setItem("sh90_device_id", id);
+      }
+      return id;
+    };
+    const DEVICE_ID = getDeviceId();
+
+    // Register device in Supabase (fire-and-forget)
+    const registerDevice = async () => {
+      if (!supabase) return;
+      try {
+        await supabase.from("devices").upsert({ device_id: DEVICE_ID }, { onConflict: "device_id" });
+      } catch (e) { console.warn("Device registration failed:", e); }
+    };
+    registerDevice();
+
+    // ── Supabase Sync Helpers ──
+    const syncToSupabase = async (table, data, conflictCols) => {
+      if (!supabase) return;
+      try {
+        await supabase.from(table).upsert(data, { onConflict: conflictCols });
+      } catch (e) { console.warn("Sync failed for " + table + ":", e); }
+    };
+
+    const loadFromSupabase = async (table, filters) => {
+      if (!supabase) return null;
+      try {
+        let query = supabase.from(table).select("*").eq("device_id", DEVICE_ID);
+        if (filters) {
+          Object.entries(filters).forEach(function(entry) {
+            query = query.eq(entry[0], entry[1]);
+          });
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        return data;
+      } catch (e) { console.warn("Load failed for " + table + ":", e); return null; }
+    };
+
+    // Sync profile to Supabase
+    const syncProfile = async (profileData, opts) => {
+      if (!supabase) return;
+      var row = {
+        device_id: DEVICE_ID,
+        name: profileData.name || "",
+        age: profileData.age || "",
+        height: profileData.height || "",
+        goal_weight: profileData.goalWeight || "",
+        notes: profileData.notes || "",
+        updated_at: new Date().toISOString(),
+      };
+      if (opts) {
+        if (opts.theme !== undefined) row.theme = opts.theme;
+        if (opts.textSize !== undefined) row.text_size = opts.textSize;
+        if (opts.workoutMode !== undefined) row.workout_mode = opts.workoutMode;
+        if (opts.calorieGoal !== undefined) row.calorie_goal = opts.calorieGoal;
+        if (opts.nextWorkoutWeek !== undefined) row.next_workout_week = opts.nextWorkoutWeek;
+        if (opts.nextWorkoutDay !== undefined) row.next_workout_day = opts.nextWorkoutDay;
+      }
+      syncToSupabase("profiles", row, "device_id");
+    };
+
+    // Sync exercise log entry
+    const syncExerciseLog = async (date, exerciseName, setIndex, entry) => {
+      if (!supabase) return;
+      syncToSupabase("exercise_logs", {
+        device_id: DEVICE_ID,
+        date: date,
+        exercise_name: exerciseName,
+        set_index: setIndex,
+        weight: entry.weight || null,
+        reps: entry.reps || null,
+        done: !!entry.done,
+        completed_at: entry.done ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }, "device_id,date,exercise_name,set_index");
+    };
+
+    // Sync session
+    const syncSession = async (date, session) => {
+      if (!supabase) return;
+      syncToSupabase("sessions", {
+        device_id: DEVICE_ID,
+        date: date,
+        week: session.week || 1,
+        day: session.day || 1,
+        status: session.status || "active",
+        started_at: session.startedAt || null,
+        completed_at: session.completedAt || null,
+        updated_at: new Date().toISOString(),
+      }, "device_id,date");
+    };
+
+    // Sync weight
+    const syncWeight = async (date, weight) => {
+      if (!supabase) return;
+      syncToSupabase("weight_log", {
+        device_id: DEVICE_ID,
+        date: date,
+        weight: weight,
+      }, "device_id,date");
+    };
+
+    // Sync habits
+    const syncHabits = async (date, habits) => {
+      if (!supabase) return;
+      var row = { device_id: DEVICE_ID, date: date, updated_at: new Date().toISOString() };
+      for (var i = 0; i < 8; i++) { row["h" + i] = !!(habits && habits[i]); }
+      syncToSupabase("habit_log", row, "device_id,date");
+    };
+
+    // Sync habit note
+    const syncHabitNote = async (date, habitIndex, note) => {
+      if (!supabase) return;
+      syncToSupabase("habit_notes", {
+        device_id: DEVICE_ID,
+        date: date,
+        habit_index: habitIndex,
+        note: note || "",
+        updated_at: new Date().toISOString(),
+      }, "device_id,date,habit_index");
+    };
+
+    // Sync steps
+    const syncSteps = async (date, steps) => {
+      if (!supabase) return;
+      syncToSupabase("step_log", {
+        device_id: DEVICE_ID,
+        date: date,
+        steps: steps,
+      }, "device_id,date");
+    };
+
+    // Sync food entry
+    const syncFoodEntry = async (entry, date) => {
+      if (!supabase) return;
+      syncToSupabase("food_entries", {
+        device_id: DEVICE_ID,
+        date: date,
+        entry_id: entry.id,
+        food_text: entry.text || "",
+        logged_at: entry.time || null,
+        items: JSON.stringify(entry.items || []),
+        calories: entry.cal || 0,
+        protein: entry.protein || 0,
+        carbs: entry.carbs || 0,
+        fat: entry.fat || 0,
+      }, "device_id,entry_id");
+    };
+
+    // Sync exercise swap
+    const syncExerciseSwap = async (week, day, original, swapped) => {
+      if (!supabase) return;
+      syncToSupabase("exercise_swaps", {
+        device_id: DEVICE_ID,
+        week: week,
+        day: day,
+        original_exercise: original,
+        swapped_exercise: swapped,
+      }, "device_id,week,day,original_exercise");
+    };
+
+    // Sync workout selection
+    const syncWorkoutSelection = async (date, sel) => {
+      if (!supabase) return;
+      syncToSupabase("workout_selection", {
+        device_id: DEVICE_ID,
+        date: date,
+        day: sel.day,
+        label: sel.label,
+      }, "device_id,date");
+    };
+
+    // ── Full Migration: push all localStorage data to Supabase ──
+    const migrateToSupabase = async () => {
+      if (!supabase) return;
+      try {
+        // Check if device already exists
+        var existing = await supabase.from("devices").select("device_id").eq("device_id", DEVICE_ID).single();
+        if (existing.data) {
+          console.log("SH90: Device already registered, skipping migration");
+          return;
+        }
+      } catch (e) { /* device not found, proceed with migration */ }
+
+      console.log("SH90: Migrating localStorage to Supabase...");
+
+      // Register device
+      await registerDevice();
+
+      // Migrate profile
+      var profile = loadProfile();
+      var theme = loadState("theme", "arctic");
+      var textSize = loadState("textSize", "medium");
+      var workoutMode = loadState("workoutMode", "gym");
+      var calorieGoal = loadState("calorieGoal", 2000);
+      var nextPos = loadState("nextWorkoutPos", null);
+      syncProfile(profile, {
+        theme: theme,
+        textSize: textSize,
+        workoutMode: workoutMode,
+        calorieGoal: calorieGoal,
+        nextWorkoutWeek: nextPos ? nextPos.week : 1,
+        nextWorkoutDay: nextPos ? nextPos.day : 1,
+      });
+
+      // Migrate sessions
+      var sessionLog = loadState("sessionLog", {});
+      Object.entries(sessionLog).forEach(function(entry) {
+        syncSession(entry[0], entry[1]);
+      });
+
+      // Migrate weight log
+      var weightLog = loadState("weightLog", {});
+      Object.entries(weightLog).forEach(function(entry) {
+        if (entry[1] > 0) syncWeight(entry[0], entry[1]);
+      });
+
+      // Migrate habit log
+      var habitLog = loadState("habitLog", {});
+      Object.entries(habitLog).forEach(function(entry) {
+        syncHabits(entry[0], entry[1]);
+      });
+
+      // Migrate habit notes
+      var habitNotes = loadState("habitNotes", {});
+      Object.entries(habitNotes).forEach(function(entry) {
+        var date = entry[0];
+        Object.entries(entry[1]).forEach(function(noteEntry) {
+          syncHabitNote(date, parseInt(noteEntry[0]), noteEntry[1]);
+        });
+      });
+
+      // Migrate step log
+      var stepLog = loadState("stepLog", {});
+      Object.entries(stepLog).forEach(function(entry) {
+        syncSteps(entry[0], entry[1]);
+      });
+
+      // Migrate food log
+      var foodLog = loadState("foodLog", {});
+      Object.entries(foodLog).forEach(function(entry) {
+        var date = entry[0];
+        var dayLog = entry[1];
+        if (dayLog && dayLog.entries) {
+          dayLog.entries.forEach(function(foodEntry) {
+            syncFoodEntry(foodEntry, date);
+          });
+        }
+      });
+
+      // Migrate exercise logs
+      var logData = loadState("logData", {});
+      Object.entries(logData).forEach(function(entry) {
+        var parts = entry[0].split("-");
+        if (parts.length >= 5) {
+          var date = parts.slice(0, 3).join("-");
+          var exName = parts.slice(3, -1).join("-");
+          var setIdx = parseInt(parts[parts.length - 1]);
+          syncExerciseLog(date, exName, setIdx, entry[1]);
+        }
+      });
+
+      // Migrate swapped exercises
+      var swapped = loadState("swappedExercises", {});
+      Object.entries(swapped).forEach(function(entry) {
+        var keyParts = entry[0].split("-");
+        if (keyParts.length >= 3) {
+          syncExerciseSwap(parseInt(keyParts[0]), parseInt(keyParts[1]), keyParts.slice(2).join("-"), entry[1]);
+        }
+      });
+
+      // Migrate workout selections
+      var ws = loadState("workoutSelection", {});
+      Object.entries(ws).forEach(function(entry) {
+        if (entry[1] && entry[1].day && entry[1].label) {
+          syncWorkoutSelection(entry[0], entry[1]);
+        }
+      });
+
+      console.log("SH90: Migration complete!");
+    };
+    migrateToSupabase();
 
 
 // ── Theme System ──
@@ -389,22 +694,22 @@ function SuperhumanApp() {
     return log;
   });
 
-  // ── Persist to localStorage ──
-  useEffect(() => saveState("theme", theme), [theme]);
-  useEffect(() => saveState("sessionLog", sessionLog), [sessionLog]);
-  useEffect(() => saveState("weightLog", weightLog), [weightLog]);
-  useEffect(() => saveState("workoutSelection", workoutSelection), [workoutSelection]);
-  useEffect(() => saveState("habitLog", habitLog), [habitLog]);
-  useEffect(() => saveState("habitNotes", habitNotes), [habitNotes]);
-  useEffect(() => saveState("stepLog", stepLog), [stepLog]);
-  useEffect(() => saveState("logData", logData), [logData]);
-  useEffect(() => saveState("swappedExercises", swappedExercises), [swappedExercises]);
-  useEffect(() => saveState("nextWorkoutPos", nextWorkoutPos), [nextWorkoutPos]);
-  useEffect(() => saveState("profile", profile), [profile]);
-  useEffect(() => saveState("textSize", textSize), [textSize]);
-  useEffect(() => saveState("workoutMode", workoutMode), [workoutMode]);
-  useEffect(() => saveState("foodLog", foodLog), [foodLog]);
-  useEffect(() => saveState("calorieGoal", calorieGoal), [calorieGoal]);
+  // ── Persist to localStorage + Supabase ──
+  useEffect(() => { saveState("theme", theme); syncProfile(profile, { theme: theme }); }, [theme]);
+  useEffect(() => { saveState("sessionLog", sessionLog); }, [sessionLog]);
+  useEffect(() => { saveState("weightLog", weightLog); }, [weightLog]);
+  useEffect(() => { saveState("workoutSelection", workoutSelection); }, [workoutSelection]);
+  useEffect(() => { saveState("habitLog", habitLog); }, [habitLog]);
+  useEffect(() => { saveState("habitNotes", habitNotes); }, [habitNotes]);
+  useEffect(() => { saveState("stepLog", stepLog); }, [stepLog]);
+  useEffect(() => { saveState("logData", logData); }, [logData]);
+  useEffect(() => { saveState("swappedExercises", swappedExercises); }, [swappedExercises]);
+  useEffect(() => { saveState("nextWorkoutPos", nextWorkoutPos); if (nextWorkoutPos) syncProfile(profile, { nextWorkoutWeek: nextWorkoutPos.week, nextWorkoutDay: nextWorkoutPos.day }); }, [nextWorkoutPos]);
+  useEffect(() => { saveState("profile", profile); syncProfile(profile); }, [profile]);
+  useEffect(() => { saveState("textSize", textSize); syncProfile(profile, { textSize: textSize }); }, [textSize]);
+  useEffect(() => { saveState("workoutMode", workoutMode); syncProfile(profile, { workoutMode: workoutMode }); }, [workoutMode]);
+  useEffect(() => { saveState("foodLog", foodLog); }, [foodLog]);
+  useEffect(() => { saveState("calorieGoal", calorieGoal); syncProfile(profile, { calorieGoal: calorieGoal }); }, [calorieGoal]);
   useEffect(() => saveState("calorieApiKey", calorieApiKey), [calorieApiKey]);
 
   const isToday = selectedDate === todayStr;
@@ -419,7 +724,9 @@ function SuperhumanApp() {
   const toggleHabit = (idx, value) => {
     setHabitLog(prev => {
       const current = prev[selectedDate] || HABIT_LABELS.map(() => false);
-      return { ...prev, [selectedDate]: current.map((v, i) => i === idx ? value : v) };
+      const updated = current.map((v, i) => i === idx ? value : v);
+      syncHabits(selectedDate, updated);
+      return { ...prev, [selectedDate]: updated };
     });
   };
 
@@ -473,19 +780,17 @@ function SuperhumanApp() {
 
   // Start a workout session (today only — goes to active state)
   const startSession = () => {
-    setSessionLog(prev => ({
-      ...prev,
-      [selectedDate]: { week, day, startedAt: new Date().toISOString(), status: "active" }
-    }));
+    var sess = { week: week, day: day, startedAt: new Date().toISOString(), status: "active" };
+    setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
+    syncSession(selectedDate, sess);
   };
 
   // Mark session complete and advance position
   const completeSession = () => {
     const sess = sessionLog[selectedDate];
-    setSessionLog(prev => ({
-      ...prev,
-      [selectedDate]: { ...prev[selectedDate], completedAt: new Date().toISOString(), status: "completed" }
-    }));
+    var completedSess = { ...sess, completedAt: new Date().toISOString(), status: "completed" };
+    setSessionLog(prev => ({ ...prev, [selectedDate]: completedSess }));
+    syncSession(selectedDate, completedSess);
     // Auto-check Workout habit at 50%+ exercise completion
     const cExercises = sess?.week && sess?.day ? (WORKOUT_DATA[sess.week]?.[sess.day]?.exercises || []) : [];
     if (cExercises.length > 0) {
@@ -511,10 +816,9 @@ function SuperhumanApp() {
 
   // Log a past workout (skips active, goes straight to completed)
   const logPastSession = () => {
-    setSessionLog(prev => ({
-      ...prev,
-      [selectedDate]: { week, day, completedAt: selectedDate + "T12:00:00", status: "completed" }
-    }));
+    var sess = { week: week, day: day, completedAt: selectedDate + "T12:00:00", status: "completed" };
+    setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
+    syncSession(selectedDate, sess);
   };
 
   // Undo / re-open a completed session for editing
@@ -685,35 +989,62 @@ function SuperhumanApp() {
       ...prev,
       [selectedDate]: { ...(prev[selectedDate] || {}), [idx]: text }
     }));
+    syncHabitNote(selectedDate, idx, text);
   };
 
-  // Food tracking helpers
+  // Food tracking helpers — uses Claude AI for nutrition estimation
+  const ANTHROPIC_KEY = "REDACTED_API_KEY";
   const estimateFood = async (text) => {
-    if (!calorieApiKey) { setFoodError("Set your API key in Profile → Food Tracker"); return; }
     setFoodLoading(true); setFoodError("");
     try {
-      const res = await fetch("https://api.calorieninjas.com/v1/nutrition?query=" + encodeURIComponent(text), {
-        headers: { "X-Api-Key": calorieApiKey }
+      var promptText = "You are a nutrition calculator. The user describes food they ate. Return ONLY valid JSON (no markdown, no explanation) with this exact structure: " +
+        '{"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
+        "Estimate realistic portions if not specified. Be accurate. User input: " + text;
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
+          messages: [{ role: "user", content: promptText }],
+        }),
       });
-      if (!res.ok) throw new Error("API error " + res.status);
-      const data = await res.json();
+      if (!res.ok) {
+        var errBody = await res.text();
+        throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
+      }
+      var result = await res.json();
+      var responseText = result.content && result.content[0] ? result.content[0].text : "";
+      // Extract JSON from response (strip any markdown fences if present)
+      var jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("Could not parse nutrition data");
+      var data = JSON.parse(jsonMatch[0]);
       if (!data.items || data.items.length === 0) { setFoodError("No results — try being more specific"); setFoodLoading(false); return; }
-      const items = data.items.map(it => ({
-        name: it.name, cal: Math.round(it.calories), protein: Math.round(it.protein_g),
-        carbs: Math.round(it.carbs_total_g), fat: Math.round(it.fat_total_g),
-        serving: it.serving_size_g ? `${Math.round(it.serving_size_g)}g` : "",
-      }));
-      const totals = items.reduce((s, i) => ({ cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
-      setFoodPending({ text, items, ...totals, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
+      var items = data.items.map(function(it) {
+        return {
+          name: it.name, cal: Math.round(it.cal || 0), protein: Math.round(it.protein || 0),
+          carbs: Math.round(it.carbs || 0), fat: Math.round(it.fat || 0),
+          serving: it.serving || "",
+        };
+      });
+      var totals = items.reduce(function(s, i) { return { cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }; }, { cal: 0, protein: 0, carbs: 0, fat: 0 });
+      setFoodPending({ text: text, items: items, cal: totals.cal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
     } catch (e) { setFoodError(e.message || "Failed to estimate"); }
     setFoodLoading(false);
   };
   const addFoodEntry = () => {
     if (!foodPending) return;
+    var newEntry = { ...foodPending, id: Date.now() };
     setFoodLog(prev => {
       const dayLog = prev[selectedDate] || { entries: [] };
-      return { ...prev, [selectedDate]: { entries: [...dayLog.entries, { ...foodPending, id: Date.now() }] } };
+      return { ...prev, [selectedDate]: { entries: [...dayLog.entries, newEntry] } };
     });
+    syncFoodEntry(newEntry, selectedDate);
     toggleHabit(5, true);
     setFoodPending(null); setFoodInput("");
   };
@@ -758,6 +1089,7 @@ function SuperhumanApp() {
       [selectedDate]: dayOption
     }));
     toggleHabit(3, true);
+    syncWorkoutSelection(selectedDate, dayOption);
   };
 
   // ── Weight Logging Helpers ──
@@ -788,6 +1120,7 @@ function SuperhumanApp() {
       setWeightLogAnim(true);
       setTimeout(() => setWeightLogAnim(false), 600);
       toggleHabit(4, true);
+      syncWeight(selectedDate, num);
     }
   };
 
@@ -797,6 +1130,7 @@ function SuperhumanApp() {
       setWeightLog(prev => ({ ...prev, [selectedDate]: v }));
       setWeightInput(String(v));
       toggleHabit(4, true);
+      syncWeight(selectedDate, v);
     } else if (weightInput === "") {
       setWeightLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
     }
@@ -810,6 +1144,7 @@ function SuperhumanApp() {
     setWeightLogAnim(true);
     setTimeout(() => setWeightLogAnim(false), 600);
     toggleHabit(4, true);
+    syncWeight(selectedDate, newVal);
   };
   
   const last7Weights = sortedWeights.slice(-7);
@@ -850,6 +1185,7 @@ function SuperhumanApp() {
     const key = `${week}-${day}-${originalName}`;
     setSwappedExercises(prev => ({ ...prev, [key]: newName }));
     setShowAlts(null);
+    syncExerciseSwap(week, day, originalName, newName);
   };
 
   return (
@@ -2621,21 +2957,16 @@ function SuperhumanApp() {
             }}>
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 12 }}>Food Tracker</div>
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>CalorieNinjas API Key</div>
-                <input
-                  type="text"
-                  value={calorieApiKey}
-                  onChange={e => setCalorieApiKey(e.target.value.trim())}
-                  placeholder="Enter API key..."
-                  style={{
-                    width: "100%", padding: "10px 12px", borderRadius: 10,
-                    border: `1px solid ${calorieApiKey ? t.success + "60" : t.border}`,
-                    background: t.cardAlt, color: t.text, fontSize: fs(13),
-                    fontFamily: "'DM Mono', monospace", outline: "none", boxSizing: "border-box",
-                  }}
-                />
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 6 }}>AI-Powered Nutrition</div>
+                <div style={{
+                  padding: "10px 12px", borderRadius: 10,
+                  border: "1px solid " + t.success + "60",
+                  background: t.cardAlt, fontSize: fs(12), color: t.success,
+                }}>
+                  Active — powered by Claude AI
+                </div>
                 <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 4 }}>
-                  Free at <span style={{ color: t.accent }}>calorieninjas.com</span> — 10K requests/month
+                  Describe your food naturally — AI estimates calories and macros
                 </div>
               </div>
               <div>
@@ -2673,7 +3004,7 @@ function SuperhumanApp() {
             }}>
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>Data</div>
               <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
-                All your data is stored locally in your browser. Export it to keep a backup.
+                Your data syncs to the cloud automatically. Local backup is also kept in your browser.
               </div>
               <button
                 onClick={() => {
@@ -2857,7 +3188,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v1.0
+              Superhuman 90 · v2.0
             </div>
           </div>
         )}
