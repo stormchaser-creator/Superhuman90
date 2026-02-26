@@ -535,6 +535,22 @@
     // Expose globally so React component can call it
     window.__sh90_restoreFromCloud = restoreFromCloud;
 
+    // ── BLOCK rendering until cloud restore is done ──
+    // This ensures loadState() in useState initializers sees cloud data
+    window.__sh90_ready = false;
+    (async function() {
+      try {
+        // Only restore if localStorage looks empty (no profile saved)
+        var hasLocal = localStorage.getItem("sh90_profile");
+        if (!hasLocal) {
+          await restoreFromCloud();
+        }
+      } catch(e) { console.warn("SH90: Pre-render restore error:", e); }
+      window.__sh90_ready = true;
+      // Now render the app
+      if (window.__sh90_renderApp) window.__sh90_renderApp();
+    })();
+
 
 // ── Theme System ──
 const THEMES = {
@@ -3406,7 +3422,15 @@ function SuperhumanApp() {
 }
 
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<SuperhumanApp />);
+    // Render app — waits for cloud restore if localStorage is empty
+    function doRender() {
+      ReactDOM.createRoot(document.getElementById("root")).render(<SuperhumanApp />);
+    }
+    if (window.__sh90_ready) {
+      doRender();
+    } else {
+      window.__sh90_renderApp = doRender;
+    }
 
   </script>
   <script>
