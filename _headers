@@ -1,0 +1,15 @@
+# Force no-cache on HTML so iOS PWA always gets the latest
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+# Service worker must never be cached
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
