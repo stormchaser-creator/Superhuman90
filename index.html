@@ -386,6 +386,155 @@
     };
     migrateToSupabase();
 
+    // ── Restore from Supabase (cloud → localStorage) ──
+    // Called on startup. If Supabase has data, it overwrites empty localStorage.
+    const restoreFromCloud = async () => {
+      if (!supabase) return null;
+      try {
+        // Check if Supabase has data for this device
+        const profileRows = await loadFromSupabase("profiles");
+        if (!profileRows || profileRows.length === 0) return null;
+        const p = profileRows[0];
+        const restored = {};
+
+        // Profile
+        restored.profile = {
+          name: p.name || "", age: p.age || "", height: p.height || "",
+          goalWeight: p.goal_weight || "", notes: p.notes || "",
+        };
+        restored.theme = p.theme || "arctic";
+        restored.textSize = p.text_size || "medium";
+        restored.workoutMode = p.workout_mode || "gym";
+        restored.calorieGoal = p.calorie_goal || 2000;
+        if (p.next_workout_week && p.next_workout_day) {
+          restored.nextWorkoutPos = { week: p.next_workout_week, day: p.next_workout_day };
+        }
+
+        // Sessions: rows → { "2026-02-18": { week, day, status, completedAt } }
+        const sessionRows = await loadFromSupabase("sessions");
+        if (sessionRows && sessionRows.length > 0) {
+          const sessionLog = {};
+          sessionRows.forEach(function(r) {
+            sessionLog[r.date] = {
+              week: r.week, day: r.day, status: r.status,
+              startedAt: r.started_at, completedAt: r.completed_at,
+            };
+          });
+          restored.sessionLog = sessionLog;
+        }
+
+        // Weight log: rows → { "2026-02-18": 185.5 }
+        const weightRows = await loadFromSupabase("weight_log");
+        if (weightRows && weightRows.length > 0) {
+          const weightLog = {};
+          weightRows.forEach(function(r) { weightLog[r.date] = Number(r.weight); });
+          restored.weightLog = weightLog;
+        }
+
+        // Habit log: rows → { "2026-02-18": [true, false, ...] }
+        const habitRows = await loadFromSupabase("habit_log");
+        if (habitRows && habitRows.length > 0) {
+          const habitLog = {};
+          habitRows.forEach(function(r) {
+            habitLog[r.date] = [r.h0, r.h1, r.h2, r.h3, r.h4, r.h5, r.h6, r.h7];
+          });
+          restored.habitLog = habitLog;
+        }
+
+        // Habit notes: rows → { "2026-02-18": { 0: "note", 2: "note" } }
+        const noteRows = await loadFromSupabase("habit_notes");
+        if (noteRows && noteRows.length > 0) {
+          const habitNotes = {};
+          noteRows.forEach(function(r) {
+            if (!habitNotes[r.date]) habitNotes[r.date] = {};
+            habitNotes[r.date][r.habit_index] = r.note;
+          });
+          restored.habitNotes = habitNotes;
+        }
+
+        // Step log: rows → { "2026-02-18": 8500 }
+        const stepRows = await loadFromSupabase("step_log");
+        if (stepRows && stepRows.length > 0) {
+          const stepLog = {};
+          stepRows.forEach(function(r) { stepLog[r.date] = r.steps; });
+          restored.stepLog = stepLog;
+        }
+
+        // Exercise logs: rows → { "2026-02-18-Squat-0": { weight, reps, done } }
+        const exRows = await loadFromSupabase("exercise_logs");
+        if (exRows && exRows.length > 0) {
+          const logData = {};
+          exRows.forEach(function(r) {
+            var key = r.date + "-" + r.exercise_name + "-" + r.set_index;
+            logData[key] = { weight: r.weight || "", reps: r.reps || "", done: !!r.done };
+          });
+          restored.logData = logData;
+        }
+
+        // Swapped exercises: rows → { "5-3-Squat": "Leg Press" }
+        const swapRows = await loadFromSupabase("exercise_swaps");
+        if (swapRows && swapRows.length > 0) {
+          const swapped = {};
+          swapRows.forEach(function(r) {
+            swapped[r.week + "-" + r.day + "-" + r.original_exercise] = r.swapped_exercise;
+          });
+          restored.swappedExercises = swapped;
+        }
+
+        // Workout selection: rows → { "2026-02-18": { day: 3, label: "ARM A" } }
+        const wsRows = await loadFromSupabase("workout_selection");
+        if (wsRows && wsRows.length > 0) {
+          const ws = {};
+          wsRows.forEach(function(r) {
+            ws[r.date] = { day: r.day, label: r.label };
+          });
+          restored.workoutSelection = ws;
+        }
+
+        // Food log: rows → { "2026-02-18": { entries: [...] } }
+        const foodRows = await loadFromSupabase("food_entries");
+        if (foodRows && foodRows.length > 0) {
+          const foodLog = {};
+          foodRows.forEach(function(r) {
+            if (!foodLog[r.date]) foodLog[r.date] = { entries: [] };
+            foodLog[r.date].entries.push({
+              id: r.entry_id, text: r.food_text, time: r.logged_at,
+              items: typeof r.items === "string" ? JSON.parse(r.items) : (r.items || []),
+              cal: r.calories || 0, protein: r.protein || 0,
+              carbs: r.carbs || 0, fat: r.fat || 0,
+            });
+          });
+          restored.foodLog = foodLog;
+        }
+
+        // Save all restored data to localStorage
+        if (restored.profile) saveState("profile", restored.profile);
+        if (restored.theme) saveState("theme", restored.theme);
+        if (restored.textSize) saveState("textSize", restored.textSize);
+        if (restored.workoutMode) saveState("workoutMode", restored.workoutMode);
+        if (restored.calorieGoal) saveState("calorieGoal", restored.calorieGoal);
+        if (restored.nextWorkoutPos) saveState("nextWorkoutPos", restored.nextWorkoutPos);
+        if (restored.sessionLog) saveState("sessionLog", restored.sessionLog);
+        if (restored.weightLog) saveState("weightLog", restored.weightLog);
+        if (restored.habitLog) saveState("habitLog", restored.habitLog);
+        if (restored.habitNotes) saveState("habitNotes", restored.habitNotes);
+        if (restored.stepLog) saveState("stepLog", restored.stepLog);
+        if (restored.logData) saveState("logData", restored.logData);
+        if (restored.swappedExercises) saveState("swappedExercises", restored.swappedExercises);
+        if (restored.workoutSelection) saveState("workoutSelection", restored.workoutSelection);
+        if (restored.foodLog) saveState("foodLog", restored.foodLog);
+
+        console.log("SH90: Restored from cloud");
+        return restored;
+      } catch (e) {
+        console.warn("SH90: Cloud restore failed:", e);
+        return null;
+      }
+    };
+
+    // Expose globally so React component can call it
+    window.__sh90_restoreFromCloud = restoreFromCloud;
+
 
 // ── Theme System ──
 const THEMES = {
@@ -693,6 +842,32 @@ function SuperhumanApp() {
     });
     return log;
   });
+
+  // ── Restore from cloud on startup ──
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+  useEffect(() => {
+    if (typeof window.__sh90_restoreFromCloud !== "function") return;
+    window.__sh90_restoreFromCloud().then(function(data) {
+      if (!data) { setCloudLoaded(true); return; }
+      // Hydrate all React state from restored cloud data
+      if (data.profile) setProfile(data.profile);
+      if (data.theme) setTheme(data.theme);
+      if (data.textSize) setTextSize(data.textSize);
+      if (data.workoutMode) setWorkoutMode(data.workoutMode);
+      if (data.calorieGoal) setCalorieGoal(data.calorieGoal);
+      if (data.nextWorkoutPos) setNextWorkoutPos(data.nextWorkoutPos);
+      if (data.sessionLog) setSessionLog(data.sessionLog);
+      if (data.weightLog) setWeightLog(data.weightLog);
+      if (data.habitLog) setHabitLog(data.habitLog);
+      if (data.habitNotes) setHabitNotes(data.habitNotes);
+      if (data.stepLog) setStepLog(data.stepLog);
+      if (data.logData) setLogData(data.logData);
+      if (data.swappedExercises) setSwappedExercises(data.swappedExercises);
+      if (data.workoutSelection) setWorkoutSelection(data.workoutSelection);
+      if (data.foodLog) setFoodLog(data.foodLog);
+      setCloudLoaded(true);
+    });
+  }, []);
 
   // ── Persist to localStorage + Supabase ──
   useEffect(() => { saveState("theme", theme); syncProfile(profile, { theme: theme }); }, [theme]);
@@ -3188,7 +3363,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v2.1
+              Superhuman 90 · v2.2
             </div>
           </div>
         )}
@@ -3236,7 +3411,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v2.1';
+    var APP_VERSION = 'v2.2';
 
     // Register service worker
     if ('serviceWorker' in navigator) {
