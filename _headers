@@ -13,3 +13,6 @@
 
 /manifest.json
   Cache-Control: no-cache, no-store, must-revalidate
+
+/version.txt
+  Cache-Control: no-cache, no-store, must-revalidate

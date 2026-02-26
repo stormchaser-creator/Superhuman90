@@ -3188,7 +3188,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v2.0
+              Superhuman 90 · v2.1
             </div>
           </div>
         )}
@@ -3235,18 +3235,18 @@ function SuperhumanApp() {
 
   </script>
   <script>
-    // Register service worker for cache management + offline support
+    // ── App version for cache busting ──
+    var APP_VERSION = 'v2.1';
+
+    // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').then(function(reg) {
-        // Check for updates every time the page loads
         reg.update();
-        // When a new SW is waiting, activate it immediately
         reg.addEventListener('updatefound', function() {
           var newWorker = reg.installing;
           if (newWorker) {
             newWorker.addEventListener('statechange', function() {
               if (newWorker.state === 'activated') {
-                // New version activated — reload to get fresh content
                 window.location.reload();
               }
             });
@@ -3254,6 +3254,30 @@ function SuperhumanApp() {
         });
       });
     }
+
+    // ── iOS PWA force-update check ──
+    // On every launch, fetch a tiny version file. If it differs from
+    // the baked-in APP_VERSION, nuke the caches and hard-reload.
+    (function() {
+      if (!navigator.standalone && !window.matchMedia('(display-mode: standalone)').matches) return;
+      fetch('./version.txt?t=' + Date.now(), { cache: 'no-store' })
+        .then(function(r) { return r.text(); })
+        .then(function(remote) {
+          if (remote.trim() !== APP_VERSION) {
+            // Clear all caches
+            if ('caches' in window) {
+              caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+              }).then(function() {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          }
+        })
+        .catch(function() {});
+    })();
   </script>
 </body>
 </html>
