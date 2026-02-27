@@ -2663,7 +2663,7 @@ function SuperhumanApp() {
                                   display: "flex", justifyContent: "space-between", alignItems: "center",
                                   padding: "8px 12px", borderBottom: i < foodPending.items.length - 1 ? `1px solid ${t.border}30` : "none",
                                 }}>
-                                  <div style={{ fontSize: fs(13), fontWeight: 500, textTransform: "capitalize" }}>{item.name}</div>
+                                  <div style={{ fontSize: fs(13), fontWeight: 500, textTransform: "capitalize" }}>{item.serving ? item.serving + " " : ""}{item.name}</div>
                                   <div style={{ display: "flex", gap: 10, fontSize: fs(11), fontFamily: "'DM Mono', monospace", color: t.textDim }}>
                                     <span style={{ color: t.accent }}>{item.cal}cal</span>
                                     <span>{item.protein}p</span>
@@ -2746,24 +2746,27 @@ function SuperhumanApp() {
                                       </div>
                                       {catEntries.map(entry => (
                                         <div key={entry.id} style={{
-                                          display: "flex", justifyContent: "space-between", alignItems: "center",
                                           padding: "8px 10px", borderRadius: 10, marginBottom: 4,
                                           background: t.cardAlt, border: `1px solid ${t.border}30`,
                                         }}>
-                                          <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                              {entry.text}
+                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {entry.items && entry.items.length > 0
+                                                  ? entry.items.map(it => (it.serving ? it.serving + " " : "") + it.name).join(", ")
+                                                  : entry.text}
+                                              </div>
+                                              <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
+                                                {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
+                                              </div>
                                             </div>
-                                            <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
-                                              {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
-                                            </div>
+                                            <button onClick={() => removeFoodEntry(entry.id)} style={{
+                                              width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
+                                              background: "transparent", color: t.textDim, fontSize: fs(12),
+                                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                              marginLeft: 8, flexShrink: 0,
+                                            }}>✕</button>
                                           </div>
-                                          <button onClick={() => removeFoodEntry(entry.id)} style={{
-                                            width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
-                                            background: "transparent", color: t.textDim, fontSize: fs(12),
-                                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                                            marginLeft: 8, flexShrink: 0,
-                                          }}>✕</button>
                                         </div>
                                       ))}
                                     </div>
