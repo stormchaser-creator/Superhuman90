@@ -1195,15 +1195,17 @@ function SuperhumanApp() {
     setFoodLoading(true); setFoodError("");
     if (!calorieApiKey) { setFoodError("API key not set. Go to Settings to add your Gemini key."); setFoodLoading(false); return; }
     try {
-      var promptText = "You are a nutrition calculator. The user describes food they ate. Return ONLY valid JSON (no markdown, no explanation) with this exact structure: " +
-        '{"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
-        "Estimate realistic portions if not specified. Be accurate. User input: " + text;
+      var promptText = "You are a nutrition calculator. The user describes food they ate. " +
+        "IMPORTANT: Respect exact quantities (e.g. '5 eggs' means 5 separate eggs, not 1). " +
+        "Return ONLY a valid JSON object with NO markdown, NO explanation, NO code fences. " +
+        'The JSON must have this exact structure: {"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
+        "Each item should reflect the full quantity specified. Estimate realistic portions if not specified. Be accurate. User input: " + text;
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { maxOutputTokens: 1024, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
+          generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
         }),
       });
       if (!res.ok) {
@@ -1217,10 +1219,15 @@ function SuperhumanApp() {
           if (p.text && !p.thought) responseText += p.text;
         });
       }
+      console.log("Gemini raw response:", JSON.stringify(result, null, 2));
+      console.log("Extracted responseText:", responseText);
       // Extract JSON from response (strip any markdown fences if present)
       var jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("Could not parse nutrition data");
-      var data = JSON.parse(jsonMatch[0]);
+      if (!jsonMatch) throw new Error("Could not parse nutrition data. Raw: " + responseText.slice(0, 200));
+      var data;
+      try { data = JSON.parse(jsonMatch[0]); } catch (pe) {
+        throw new Error("JSON parse failed: " + pe.message + ". Text: " + jsonMatch[0].slice(0, 200));
+      }
       if (!data.items || data.items.length === 0) { setFoodError("No results — try being more specific"); setFoodLoading(false); return; }
       var items = data.items.map(function(it) {
         return {
