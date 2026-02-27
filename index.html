@@ -243,6 +243,7 @@
         date: date,
         entry_id: entry.id,
         food_text: entry.text || "",
+        category: entry.category || "",
         logged_at: entry.time || null,
         items: JSON.stringify(entry.items || []),
         calories: entry.cal || 0,
@@ -1191,15 +1192,36 @@ function SuperhumanApp() {
   };
 
   // Food tracking helpers — uses Gemini AI for nutrition estimation
+  const MEAL_CATEGORIES = ["Breakfast", "Lunch", "Snack", "Dinner"];
+  const detectMealCategory = (text) => {
+    var lower = text.toLowerCase().trim();
+    var categories = [
+      { key: "Breakfast", patterns: [/^breakfast\b[:\-,]?\s*/i] },
+      { key: "Lunch", patterns: [/^lunch\b[:\-,]?\s*/i] },
+      { key: "Dinner", patterns: [/^dinner\b[:\-,]?\s*/i, /^supper\b[:\-,]?\s*/i] },
+      { key: "Snack", patterns: [/^snack\b[:\-,]?\s*/i, /^snacks\b[:\-,]?\s*/i] },
+    ];
+    for (var c of categories) {
+      for (var p of c.patterns) {
+        if (p.test(text)) return { category: c.key, cleanText: text.replace(p, "").trim() };
+      }
+    }
+    // Fall back to time-based detection
+    var hour = new Date().getHours();
+    var cat = hour < 11 ? "Breakfast" : hour < 14 ? "Lunch" : hour < 17 ? "Snack" : "Dinner";
+    return { category: cat, cleanText: text };
+  };
   const estimateFood = async (text) => {
     setFoodLoading(true); setFoodError("");
     if (!calorieApiKey) { setFoodError("API key not set. Go to Settings to add your Gemini key."); setFoodLoading(false); return; }
+    var detected = detectMealCategory(text);
+    var foodText = detected.cleanText || text;
     try {
       var promptText = "You are a nutrition calculator. The user describes food they ate. " +
         "IMPORTANT: Respect exact quantities (e.g. '5 eggs' means 5 separate eggs, not 1). " +
         "Return ONLY a valid JSON object with NO markdown, NO explanation, NO code fences. " +
         'The JSON must have this exact structure: {"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
-        "Each item should reflect the full quantity specified. Estimate realistic portions if not specified. Be accurate. User input: " + text;
+        "Each item should reflect the full quantity specified. Estimate realistic portions if not specified. Be accurate. User input: " + foodText;
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1237,7 +1259,7 @@ function SuperhumanApp() {
         };
       });
       var totals = items.reduce(function(s, i) { return { cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }; }, { cal: 0, protein: 0, carbs: 0, fat: 0 });
-      setFoodPending({ text: text, items: items, cal: totals.cal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
+      setFoodPending({ text: foodText, category: detected.category, items: items, cal: totals.cal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
       setFoodInput("");
     } catch (e) { setFoodError(e.message || "Failed to estimate"); }
     setFoodLoading(false);
@@ -2623,7 +2645,7 @@ function SuperhumanApp() {
                             }}>
                               <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.accent}20` }}>
                                 <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>
-                                  DETECTED — {foodPending.text}
+                                  {foodPending.category ? foodPending.category.toUpperCase() + " — " : "DETECTED — "}{foodPending.text}
                                 </div>
                               </div>
                               {foodPending.items.map((item, i) => (
@@ -2698,32 +2720,45 @@ function SuperhumanApp() {
                                   </div>
                                 </div>
 
-                                {/* Entry list */}
-                                <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
-                                  TODAY'S LOG
-                                </div>
-                                {dayEntries.map(entry => (
-                                  <div key={entry.id} style={{
-                                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                                    padding: "8px 10px", borderRadius: 10, marginBottom: 4,
-                                    background: t.cardAlt, border: `1px solid ${t.border}30`,
-                                  }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        {entry.text}
+                                {/* Entry list grouped by meal category */}
+                                {MEAL_CATEGORIES.filter(cat => dayEntries.some(e => (e.category || "Snack") === cat)).map(cat => {
+                                  var catEntries = dayEntries.filter(e => (e.category || "Snack") === cat);
+                                  var catTotals = catEntries.reduce((s, e) => ({ cal: s.cal + e.cal, protein: s.protein + e.protein, carbs: s.carbs + e.carbs, fat: s.fat + e.fat }), { cal: 0, protein: 0, carbs: 0, fat: 0 });
+                                  return (
+                                    <div key={cat} style={{ marginBottom: 10 }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                        <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                                          {cat.toUpperCase()}
+                                        </div>
+                                        <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                                          {catTotals.cal}cal · {catTotals.protein}p {catTotals.carbs}c {catTotals.fat}f
+                                        </div>
                                       </div>
-                                      <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
-                                        {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
-                                      </div>
+                                      {catEntries.map(entry => (
+                                        <div key={entry.id} style={{
+                                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                                          padding: "8px 10px", borderRadius: 10, marginBottom: 4,
+                                          background: t.cardAlt, border: `1px solid ${t.border}30`,
+                                        }}>
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                              {entry.text}
+                                            </div>
+                                            <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
+                                              {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
+                                            </div>
+                                          </div>
+                                          <button onClick={() => removeFoodEntry(entry.id)} style={{
+                                            width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
+                                            background: "transparent", color: t.textDim, fontSize: fs(12),
+                                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                            marginLeft: 8, flexShrink: 0,
+                                          }}>✕</button>
+                                        </div>
+                                      ))}
                                     </div>
-                                    <button onClick={() => removeFoodEntry(entry.id)} style={{
-                                      width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
-                                      background: "transparent", color: t.textDim, fontSize: fs(12),
-                                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                                      marginLeft: 8, flexShrink: 0,
-                                    }}>✕</button>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             );
                           })()}
