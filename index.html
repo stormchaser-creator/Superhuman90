@@ -795,6 +795,7 @@ function SuperhumanApp() {
   });
   const [foodInput, setFoodInput] = useState("");
   const [foodPending, setFoodPending] = useState(null); // API result waiting for confirm
+  const [foodEditing, setFoodEditing] = useState(null); // {id, category, cal, protein, carbs, fat}
   const [foodLoading, setFoodLoading] = useState(false);
   const [foodError, setFoodError] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -1293,6 +1294,23 @@ function SuperhumanApp() {
       if (entries.length === 0) { toggleHabit(5, false); }
       return { ...prev, [selectedDate]: { entries } };
     });
+  };
+  const startEditingFood = (entry) => {
+    setFoodEditing({ id: entry.id, category: entry.category || "Snack", cal: entry.cal, protein: entry.protein, carbs: entry.carbs, fat: entry.fat });
+  };
+  const saveFoodEdit = () => {
+    if (!foodEditing) return;
+    setFoodLog(prev => {
+      const dayLog = prev[selectedDate];
+      if (!dayLog) return prev;
+      const entries = dayLog.entries.map(e => e.id === foodEditing.id ? {
+        ...e, category: foodEditing.category,
+        cal: parseInt(foodEditing.cal) || 0, protein: parseInt(foodEditing.protein) || 0,
+        carbs: parseInt(foodEditing.carbs) || 0, fat: parseInt(foodEditing.fat) || 0,
+      } : e);
+      return { ...prev, [selectedDate]: { entries } };
+    });
+    setFoodEditing(null);
   };
   const getDayFoodTotals = (date) => {
     const entries = foodLog[date]?.entries || [];
@@ -2747,26 +2765,71 @@ function SuperhumanApp() {
                                       {catEntries.map(entry => (
                                         <div key={entry.id} style={{
                                           padding: "8px 10px", borderRadius: 10, marginBottom: 4,
-                                          background: t.cardAlt, border: `1px solid ${t.border}30`,
+                                          background: foodEditing && foodEditing.id === entry.id ? t.accent + "10" : t.cardAlt,
+                                          border: `1px solid ${foodEditing && foodEditing.id === entry.id ? t.accent + "60" : t.border + "30"}`,
                                         }}>
-                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {foodEditing && foodEditing.id === entry.id ? (
+                                            <div>
+                                              <div style={{ fontSize: fs(12), fontWeight: 500, marginBottom: 8 }}>
                                                 {entry.items && entry.items.length > 0
                                                   ? entry.items.map(it => (it.serving ? it.serving + " " : "") + it.name).join(", ")
                                                   : entry.text}
                                               </div>
-                                              <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
-                                                {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
+                                              <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                                                {MEAL_CATEGORIES.map(mc => (
+                                                  <button key={mc} onClick={() => setFoodEditing(prev => ({ ...prev, category: mc }))} style={{
+                                                    padding: "4px 10px", borderRadius: 8, fontSize: fs(11), fontFamily: "'DM Mono', monospace",
+                                                    border: `1px solid ${foodEditing.category === mc ? t.accent : t.border}`,
+                                                    background: foodEditing.category === mc ? t.accent : "transparent",
+                                                    color: foodEditing.category === mc ? "#fff" : t.textDim,
+                                                    cursor: "pointer",
+                                                  }}>{mc}</button>
+                                                ))}
+                                              </div>
+                                              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                                                {[["cal", "Cal"], ["protein", "P"], ["carbs", "C"], ["fat", "F"]].map(([key, label]) => (
+                                                  <div key={key} style={{ flex: 1 }}>
+                                                    <div style={{ fontSize: fs(9), color: t.textDim, fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>{label}</div>
+                                                    <input type="number" value={foodEditing[key]} onChange={e => setFoodEditing(prev => ({ ...prev, [key]: e.target.value }))}
+                                                      style={{
+                                                        width: "100%", padding: "4px 6px", borderRadius: 6, fontSize: fs(12),
+                                                        border: `1px solid ${t.border}`, background: t.card, color: t.text,
+                                                        fontFamily: "'DM Mono', monospace", textAlign: "center",
+                                                      }} />
+                                                  </div>
+                                                ))}
+                                              </div>
+                                              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                                <button onClick={() => setFoodEditing(null)} style={{
+                                                  padding: "4px 12px", borderRadius: 8, border: `1px solid ${t.border}`,
+                                                  background: "transparent", color: t.textDim, fontSize: fs(11), cursor: "pointer",
+                                                }}>Cancel</button>
+                                                <button onClick={saveFoodEdit} style={{
+                                                  padding: "4px 12px", borderRadius: 8, border: "none",
+                                                  background: t.accent, color: "#fff", fontSize: fs(11), fontWeight: 600, cursor: "pointer",
+                                                }}>Save</button>
                                               </div>
                                             </div>
-                                            <button onClick={() => removeFoodEntry(entry.id)} style={{
-                                              width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
-                                              background: "transparent", color: t.textDim, fontSize: fs(12),
-                                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                                              marginLeft: 8, flexShrink: 0,
-                                            }}>✕</button>
-                                          </div>
+                                          ) : (
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                              <div onClick={() => startEditingFood(entry)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+                                                <div style={{ fontSize: fs(12), fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                  {entry.items && entry.items.length > 0
+                                                    ? entry.items.map(it => (it.serving ? it.serving + " " : "") + it.name).join(", ")
+                                                    : entry.text}
+                                                </div>
+                                                <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
+                                                  {entry.time} · {entry.cal}cal · {entry.protein}p {entry.carbs}c {entry.fat}f
+                                                </div>
+                                              </div>
+                                              <button onClick={() => removeFoodEntry(entry.id)} style={{
+                                                width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.border}`,
+                                                background: "transparent", color: t.textDim, fontSize: fs(12),
+                                                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                                                marginLeft: 8, flexShrink: 0,
+                                              }}>✕</button>
+                                            </div>
+                                          )}
                                         </div>
                                       ))}
                                     </div>
