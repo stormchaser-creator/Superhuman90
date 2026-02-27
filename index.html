@@ -1211,8 +1211,12 @@ function SuperhumanApp() {
         throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
       }
       var result = await res.json();
-      var responseText = result.candidates && result.candidates[0] && result.candidates[0].content
-        ? result.candidates[0].content.parts[0].text : "";
+      var responseText = "";
+      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+        result.candidates[0].content.parts.forEach(function(p) {
+          if (p.text && !p.thought) responseText += p.text;
+        });
+      }
       // Extract JSON from response (strip any markdown fences if present)
       var jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Could not parse nutrition data");
