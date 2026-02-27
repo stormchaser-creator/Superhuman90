@@ -1203,7 +1203,7 @@ function SuperhumanApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { maxOutputTokens: 1024 },
+          generationConfig: { maxOutputTokens: 1024, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
         }),
       });
       if (!res.ok) {
