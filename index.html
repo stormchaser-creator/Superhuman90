@@ -1217,11 +1217,17 @@ function SuperhumanApp() {
     var detected = detectMealCategory(text);
     var foodText = detected.cleanText || text;
     try {
-      var promptText = "You are a nutrition calculator. The user describes food they ate. " +
-        "IMPORTANT: Respect exact quantities (e.g. '5 eggs' means 5 separate eggs, not 1). " +
+      var promptText = "You are a precise nutrition calculator. The user describes food they ate. " +
+        "CRITICAL RULES FOR QUANTITIES: " +
+        "1. Respect EXACT amounts: '5 eggs' = 5 eggs, '2 slices' = 2 slices. " +
+        "2. Understand fractions: 'quarter of an avocado' = 0.25 avocado, 'half a banana' = 0.5 banana. " +
+        "3. Understand measurements: '1 cup rice' = 1 cup cooked rice, '2 tbsp peanut butter' = 2 tablespoons. " +
+        "4. Understand words: 'a' or 'an' = 1, 'a couple' = 2, 'a few' = 3, 'half' = 0.5. " +
+        "5. The serving field MUST reflect the actual amount described (e.g. '1/4 avocado', '1 cup', '5 large eggs'). " +
+        "6. Calculate calories and macros for the EXACT portion described, not a default serving. " +
         "Return ONLY a valid JSON object with NO markdown, NO explanation, NO code fences. " +
         'The JSON must have this exact structure: {"items":[{"name":"food name","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
-        "Each item should reflect the full quantity specified. Estimate realistic portions if not specified. Be accurate. User input: " + foodText;
+        "User input: " + foodText;
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
