@@ -1238,6 +1238,7 @@ function SuperhumanApp() {
       });
       var totals = items.reduce(function(s, i) { return { cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }; }, { cal: 0, protein: 0, carbs: 0, fat: 0 });
       setFoodPending({ text: text, items: items, cal: totals.cal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
+      setFoodInput("");
     } catch (e) { setFoodError(e.message || "Failed to estimate"); }
     setFoodLoading(false);
   };
