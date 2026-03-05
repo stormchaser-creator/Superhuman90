@@ -880,7 +880,17 @@ function SuperhumanApp() {
       if (data.textSize) setTextSize(data.textSize);
       if (data.workoutMode) setWorkoutMode(data.workoutMode);
       if (data.calorieGoal) setCalorieGoal(data.calorieGoal);
-      if (data.nextWorkoutPos) setNextWorkoutPos(data.nextWorkoutPos);
+      if (data.nextWorkoutPos) {
+        // Only use cloud nextWorkoutPos if it's more advanced than local, to avoid overwriting a recently-completed advancement
+        const localPos = loadState("nextWorkoutPos", null);
+        if (localPos && localPos.week && localPos.day) {
+          const localN = (localPos.week - 1) * 6 + localPos.day;
+          const cloudN = (data.nextWorkoutPos.week - 1) * 6 + data.nextWorkoutPos.day;
+          if (cloudN > localN) setNextWorkoutPos(data.nextWorkoutPos);
+        } else {
+          setNextWorkoutPos(data.nextWorkoutPos);
+        }
+      }
       if (data.sessionLog) setSessionLog(data.sessionLog);
       if (data.weightLog) setWeightLog(data.weightLog);
       if (data.habitLog) setHabitLog(data.habitLog);
@@ -1887,7 +1897,7 @@ function SuperhumanApp() {
                       }} />
                     </div>
                   )}
-                  {!isFutureDate && !hasProgress && (
+                  {!isFutureDate && (
                     <button onClick={logRestDay}
                       style={{
                         width: "100%", marginTop: 8, padding: "10px", borderRadius: 10,
@@ -1896,7 +1906,7 @@ function SuperhumanApp() {
                         fontFamily: "inherit", display: "flex", alignItems: "center",
                         justifyContent: "center", gap: 6,
                       }}>
-                      🌙 Take Rest Day
+                      {hasProgress ? "🌙 Skip — Take Rest Day Instead" : "🌙 Take Rest Day"}
                     </button>
                   )}
                 </div>
