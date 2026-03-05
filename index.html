@@ -1033,6 +1033,15 @@ function SuperhumanApp() {
     var sess = { week: week, day: day, completedAt: selectedDate + "T12:00:00", status: "completed" };
     setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
     syncSession(selectedDate, sess);
+    // Advance nextWorkoutPos if this session is at or ahead of current position
+    const sessionPos = (week - 1) * 6 + day;
+    const currentPos = nextWorkoutPos ? (nextWorkoutPos.week - 1) * 6 + nextWorkoutPos.day : 0;
+    if (sessionPos >= currentPos) {
+      let nextDay = day + 1, nextWeek = week;
+      if (nextDay > 6) { nextDay = 1; nextWeek++; }
+      if (nextWeek > 12) { nextWeek = 12; nextDay = 6; }
+      setNextWorkoutPos({ week: nextWeek, day: nextDay });
+    }
   };
 
   // Log a rest day (no workout, does NOT advance nextWorkoutPos)
