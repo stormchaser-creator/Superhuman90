@@ -92,6 +92,14 @@
 
     // Device ID: persistent anonymous identifier
     const OLD_DEFAULT_DEVICE = "aaae86fd-3725-4650-9fbd-2fc8d55efd41";
+    const clearAllSh90Data = () => {
+      var staleKeys = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.startsWith("sh90_")) staleKeys.push(k);
+      }
+      staleKeys.forEach(function(k) { localStorage.removeItem(k); });
+    };
     const getDeviceId = () => {
       var params = new URLSearchParams(window.location.search);
       var urlDevice = params.get("device");
@@ -101,8 +109,10 @@
         return urlDevice;
       }
       let id = localStorage.getItem("sh90_device_id");
-      // Auto-reassign if no ID yet, or if stuck with old shared default and no local profile
+      // Auto-reassign: no ID yet, or stuck with old shared default with no local profile
+      // Clear ALL sh90_ data so cloud-restored keys from the old shared ID don't persist
       if (!id || (id === OLD_DEFAULT_DEVICE && !localStorage.getItem("sh90_profile"))) {
+        clearAllSh90Data();
         id = crypto.randomUUID();
         localStorage.setItem("sh90_device_id", id);
       }
@@ -767,7 +777,7 @@ function SuperhumanApp() {
   const [customAlt, setCustomAlt] = useState("");
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [swappedExercises, setSwappedExercises] = useState(() => loadState("swappedExercises", {}));
-  const [nextWorkoutPos, setNextWorkoutPos] = useState(() => loadState("nextWorkoutPos", null));
+  const [nextWorkoutPos, setNextWorkoutPos] = useState(() => loadState("nextWorkoutPos", { week: 1, day: 1 }));
   const [expandedHabit, setExpandedHabit] = useState(null);
   // Profile data
   const [profile, setProfile] = useState(loadProfile);
@@ -3357,12 +3367,7 @@ function SuperhumanApp() {
               <button
                 onClick={() => {
                   if (!confirm("This will erase ALL local data (workouts, habits, weight, food) and start fresh at Week 1. Your Supabase cloud data will not be deleted. Continue?")) return;
-                  const keys = [];
-                  for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.startsWith("sh90_")) keys.push(k);
-                  }
-                  keys.forEach(k => localStorage.removeItem(k));
+                  clearAllSh90Data();
                   localStorage.setItem("sh90_device_id", crypto.randomUUID());
                   window.location.reload();
                 }}
