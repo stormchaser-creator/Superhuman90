@@ -770,8 +770,8 @@ function MiniChart({ data, color, height = 60, label }) {
 function SuperhumanApp() {
   const [theme, setTheme] = useState(() => loadState("theme", "arctic"));
   const [tab, setTab] = useState("habits");
-  const [week, setWeek] = useState(5);
-  const [day, setDay] = useState(3);
+  const [week, setWeek] = useState(() => loadState("nextWorkoutPos", { week: 1, day: 1 }).week);
+  const [day, setDay] = useState(() => loadState("nextWorkoutPos", { week: 1, day: 1 }).day);
   const [expandedEx, setExpandedEx] = useState(null);
   const [showAlts, setShowAlts] = useState(null);
   const [logData, setLogData] = useState(() => loadState("logData", {}));
@@ -1013,6 +1013,17 @@ function SuperhumanApp() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [isSessionActive, selectedSession?.startedAt]);
+
+  // Sync week/day when nextWorkoutPos changes (e.g. after cloud restore) while on today
+  useEffect(() => {
+    if (selectedDate === todayStr) {
+      const session = sessionLog[selectedDate];
+      if (!session?.week) {
+        setWeek(nextWorkoutPos.week);
+        setDay(nextWorkoutPos.day);
+      }
+    }
+  }, [nextWorkoutPos]);
 
   // Auto-navigate to the correct week/day when selecting a date
   useEffect(() => {
