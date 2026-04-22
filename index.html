@@ -198,8 +198,8 @@
       syncToSupabase("sessions", {
         device_id: DEVICE_ID,
         date: date,
-        week: session.week ?? 1,
-        day: session.day ?? null,
+        week: session.week || 1,
+        day: session.day || 1,
         status: session.status || "active",
         started_at: session.startedAt || null,
         completed_at: session.completedAt || null,
@@ -850,17 +850,7 @@ function SuperhumanApp() {
       if (data.textSize) setTextSize(data.textSize);
       if (data.workoutMode) setWorkoutMode(data.workoutMode);
       if (data.calorieGoal) setCalorieGoal(data.calorieGoal);
-      if (data.nextWorkoutPos) {
-        // Only use cloud nextWorkoutPos if it's more advanced than local, to avoid overwriting a recently-completed advancement
-        const localPos = loadState("nextWorkoutPos", null);
-        if (localPos && localPos.week && localPos.day) {
-          const localN = (localPos.week - 1) * 6 + localPos.day;
-          const cloudN = (data.nextWorkoutPos.week - 1) * 6 + data.nextWorkoutPos.day;
-          if (cloudN > localN) setNextWorkoutPos(data.nextWorkoutPos);
-        } else {
-          setNextWorkoutPos(data.nextWorkoutPos);
-        }
-      }
+      if (data.nextWorkoutPos) setNextWorkoutPos(data.nextWorkoutPos);
       if (data.sessionLog) setSessionLog(data.sessionLog);
       if (data.weightLog) setWeightLog(data.weightLog);
       if (data.habitLog) setHabitLog(data.habitLog);
@@ -914,10 +904,6 @@ function SuperhumanApp() {
   const selectedSession = sessionLog[selectedDate];
   const isSessionActive = selectedSession?.status === "active";
   const isPastDate = selectedDate < todayStr;
-  const isRestDay = selectedSession?.status === "rest";
-  const isSundayDate = selectedDateObj.getDay() === 0;
-  // Effectively a rest day: explicitly logged OR it's Sunday with no session started
-  const isEffectivelyRestDay = isRestDay || (isSundayDate && !selectedSession);
 
   // Compute next workout position (rolling schedule)
   const getNextWorkoutPosition = () => {
@@ -1001,23 +987,6 @@ function SuperhumanApp() {
   // Log a past workout (skips active, goes straight to completed)
   const logPastSession = () => {
     var sess = { week: week, day: day, completedAt: selectedDate + "T12:00:00", status: "completed" };
-    setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
-    syncSession(selectedDate, sess);
-    // Advance nextWorkoutPos if this session is at or ahead of current position
-    const sessionPos = (week - 1) * 6 + day;
-    const currentPos = nextWorkoutPos ? (nextWorkoutPos.week - 1) * 6 + nextWorkoutPos.day : 0;
-    if (sessionPos >= currentPos) {
-      let nextDay = day + 1, nextWeek = week;
-      if (nextDay > 6) { nextDay = 1; nextWeek++; }
-      if (nextWeek > 12) { nextWeek = 12; nextDay = 6; }
-      setNextWorkoutPos({ week: nextWeek, day: nextDay });
-    }
-  };
-
-  // Log a rest day (no workout, does NOT advance nextWorkoutPos)
-  const logRestDay = () => {
-    const next = getNextWorkoutPosition();
-    var sess = { status: "rest", week: next.week, day: null, completedAt: new Date().toISOString() };
     setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
     syncSession(selectedDate, sess);
   };
@@ -1124,8 +1093,9 @@ function SuperhumanApp() {
   const weekData = WORKOUT_DATA[week] || WORKOUT_DATA[5];
   const dayData = weekData?.[day];
   const exercises = dayData?.exercises || [];
-  const phaseLabel = week <= 4 ? "Phase 1" : week <= 8 ? "Phase 2" : "Phase 3";
-  const phaseWeeks = week <= 4 ? "Wk 1-4" : week <= 8 ? "Wk 5-8" : "Wk 9-12";
+  const programWeek = nextWorkoutPos.week;
+  const phaseLabel = programWeek <= 4 ? "Phase 1" : programWeek <= 8 ? "Phase 2" : "Phase 3";
+  const phaseWeeks = programWeek <= 4 ? "Wk 1-4" : programWeek <= 8 ? "Wk 5-8" : "Wk 9-12";
 
   const getPrevWeekResult = (exName) => {
     const sorted = Object.entries(logData)
@@ -1517,9 +1487,7 @@ function SuperhumanApp() {
             const hasW = dateHasWorkout(ds);
             const hasH = dateHasHabits(ds);
             const hasWt = dateHasWeight(ds);
-            const isRestLogged = sessionLog[ds]?.status === "rest";
-            const isImpliedRest = new Date(ds + "T12:00:00").getDay() === 0 && !hasW && !isRestLogged;
-            const hasAny = hasW || hasH || hasWt || isRestLogged;
+            const hasAny = hasW || hasH || hasWt;
 
             return (
               <button key={ds}
@@ -1557,13 +1525,8 @@ function SuperhumanApp() {
                   }}>{monthShort}</span>
                 )}
                 {dayNum !== 1 && ds !== weekDays[0] && !isTodayDate && (
-                  <div style={{ display: "flex", gap: 2, marginTop: 2, height: 5, alignItems: "center" }}>
-                    {isRestLogged
-                      ? <div style={{ width: 5, height: 5, borderRadius: 3, background: t.textMuted }} />
-                      : isImpliedRest
-                        ? <div style={{ width: 5, height: 5, borderRadius: 3, background: t.textMuted, opacity: 0.35 }} />
-                        : hasW && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.success }} />
-                    }
+                  <div style={{ display: "flex", gap: 2, marginTop: 2, height: 5 }}>
+                    {hasW && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.success }} />}
                     {hasH && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.accent }} />}
                     {hasWt && <div style={{ width: 5, height: 5, borderRadius: 3, background: t.warning }} />}
                   </div>
@@ -1574,13 +1537,7 @@ function SuperhumanApp() {
                     lineHeight: 1, marginTop: 1,
                   }}>TODAY</span>
                 )}
-                {isRestLogged && !isTodayDate && dayNum !== 1 && ds !== weekDays[0] && (
-                  <span style={{ fontSize: 7, fontWeight: 700, color: t.textMuted, lineHeight: 1, marginTop: 1, letterSpacing: 0.3 }}>REST</span>
-                )}
-                {isImpliedRest && !hasAny && !isTodayDate && dayNum !== 1 && ds !== weekDays[0] && (
-                  <span style={{ fontSize: 7, lineHeight: 1, marginTop: 1 }}>🌙</span>
-                )}
-                {!hasAny && !isRestLogged && !isImpliedRest && !isTodayDate && dayNum !== 1 && ds !== weekDays[0] && (
+                {!hasAny && !isTodayDate && dayNum !== 1 && ds !== weekDays[0] && (
                   <div style={{ height: 5, marginTop: 2 }} />
                 )}
               </button>
@@ -1759,38 +1716,6 @@ function SuperhumanApp() {
               const nextPos = getNextWorkoutPosition();
               const completedCount = Object.values(sessionLog).filter(s => s.status === "completed").length;
 
-              // Rest Day (explicitly logged as rest, or Sunday with no session)
-              if (isEffectivelyRestDay) {
-                return (
-                  <div style={{
-                    padding: "16px 14px", borderRadius: 14, marginBottom: 14,
-                    background: t.card, border: `1px solid ${t.border}`,
-                    textAlign: "center",
-                  }}>
-                    <div style={{ fontSize: fs(28), marginBottom: 6 }}>🌙</div>
-                    <div style={{ fontSize: fs(16), fontWeight: 600, color: t.textDim }}>REST DAY</div>
-                    <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4, lineHeight: 1.5 }}>
-                      {isSundayDate ? "Sunday — scheduled rest day" : "Recovery is part of the program."}
-                    </div>
-                    {!isFutureDate && (
-                      <button
-                        onClick={isRestDay
-                          ? () => { setSessionLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; }); }
-                          : isPastDate ? logPastSession : startSession
-                        }
-                        style={{
-                          marginTop: 12, padding: "8px 16px", borderRadius: 8,
-                          border: `1px dashed ${t.accent}40`, background: "transparent",
-                          color: t.accent, fontSize: fs(12), cursor: "pointer",
-                          fontFamily: "inherit",
-                        }}>
-                        {isRestDay ? "Actually worked out? Start workout →" : "💪 Work out instead →"}
-                      </button>
-                    )}
-                  </div>
-                );
-              }
-
               // Program complete
               if (completedCount >= 72 && !isFutureDate && !isPastDate) {
                 return (
@@ -1876,22 +1801,9 @@ function SuperhumanApp() {
                       }} />
                     </div>
                   )}
-                  {!isFutureDate && (
-                    <button onClick={logRestDay}
-                      style={{
-                        width: "100%", marginTop: 8, padding: "10px", borderRadius: 10,
-                        border: `1px dashed ${t.border}`, background: "transparent",
-                        color: t.textDim, fontSize: fs(13), cursor: "pointer",
-                        fontFamily: "inherit", display: "flex", alignItems: "center",
-                        justifyContent: "center", gap: 6,
-                      }}>
-                      {hasProgress ? "🌙 Skip — Take Rest Day Instead" : "🌙 Take Rest Day"}
-                    </button>
-                  )}
                 </div>
               );
             })()}
-            {!isEffectivelyRestDay && <>
             {/* Week & Day Selector */}
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setShowWeekPicker(!showWeekPicker)}
@@ -2251,7 +2163,6 @@ function SuperhumanApp() {
                 </div>
               );
             })}
-            </>}
           </div>
         )}
 
