@@ -1144,17 +1144,6 @@ function SuperhumanApp() {
         hist.push({ week: date, result: `${val.weight}×${val.reps || "?"}` });
       }
     });
-    if (hist.length === 0) {
-      for (let w = 1; w <= 12; w++) {
-        const wd = WORKOUT_DATA[w];
-        if (!wd) continue;
-        for (let d = 1; d <= 6; d++) {
-          if (!wd[d]) continue;
-          const ex = wd[d].exercises.find(e => e.name === exName);
-          if (ex?.result) hist.push({ week: w, result: ex.result });
-        }
-      }
-    }
     return hist;
   };
 
