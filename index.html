@@ -91,7 +91,6 @@
     const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
     // Device ID: persistent anonymous identifier
-    const DEFAULT_DEVICE = "aaae86fd-3725-4650-9fbd-2fc8d55efd41";
     const getDeviceId = () => {
       var params = new URLSearchParams(window.location.search);
       var urlDevice = params.get("device");
@@ -102,7 +101,7 @@
       }
       let id = localStorage.getItem("sh90_device_id");
       if (!id) {
-        id = DEFAULT_DEVICE;
+        id = crypto.randomUUID();
         localStorage.setItem("sh90_device_id", id);
       }
       return id;
