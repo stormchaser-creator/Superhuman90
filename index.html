@@ -148,7 +148,8 @@
         }
         const { data, error } = await query;
         if (error) throw error;
-        return data;
+        // Client-side safety: strip any rows that don't belong to this device
+        return data ? data.filter(function(r) { return r.device_id === DEVICE_ID; }) : data;
       } catch (e) { console.warn("Load failed for " + table + ":", e); return null; }
     };
 
@@ -810,19 +811,7 @@ function SuperhumanApp() {
   const [foodLoading, setFoodLoading] = useState(false);
   const [foodError, setFoodError] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [weightLog, setWeightLog] = useState(() => {
-    const _saved4 = loadState("weightLog", null); if (_saved4) return _saved4;
-    const log = {};
-    const startDate = new Date(2026, 0, 19);
-    WEIGHT_DATA.forEach((w, i) => {
-      if (w > 0) {
-        const d = new Date(startDate);
-        d.setDate(d.getDate() + i);
-        log[toLocalDateStr(d)] = w;
-      }
-    });
-    return log;
-  });
+  const [weightLog, setWeightLog] = useState(() => loadState("weightLog", {}));
   const [weightInput, setWeightInput] = useState("");
   const [weightLogAnim, setWeightLogAnim] = useState(false);
 
@@ -831,27 +820,7 @@ function SuperhumanApp() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
   // Session log: { "2026-02-18": { week: 5, day: 1, completedAt: "...", exercises: {...} } }
-  const [sessionLog, setSessionLog] = useState(() => {
-    const _saved = loadState("sessionLog", null); if (_saved) return _saved;
-    // Program starts Mon Jan 19. Mon-Sat = workout, Sun = rest.
-    // Verified: Feb 16=W5D1(Legs), Feb 17=W5D2(Torso), Feb 18=W5D3(Arms)
-    const log = {};
-    const start = new Date(2026, 0, 19); // Monday Jan 19
-    let dayCount = 0;
-    for (let w = 1; w <= 5; w++) {
-      for (let d = 1; d <= 6; d++) {
-        const date = new Date(start);
-        date.setDate(start.getDate() + dayCount);
-        const ds = toLocalDateStr(date);
-        if (ds <= "2026-02-18") { // only log up to today
-          log[ds] = { week: w, day: d, completedAt: ds + "T18:00:00Z", status: "completed" };
-        }
-        dayCount++;
-      }
-      dayCount++; // skip Sunday rest day
-    }
-    return log;
-  });
+  const [sessionLog, setSessionLog] = useState(() => loadState("sessionLog", {}));
 
   // Workout selection per date — pre-populated from session log
   const [workoutSelection, setWorkoutSelection] = useState(() => {
@@ -867,17 +836,7 @@ function SuperhumanApp() {
   });
 
   // Habit log by date: { "2026-02-18": [true, false, true, ...] }
-  const [habitLog, setHabitLog] = useState(() => {
-    const _saved3 = loadState("habitLog", null); if (_saved3) return _saved3;
-    const log = {};
-    const start = new Date(2026, 0, 19);
-    habitHistory.forEach((dayHabits, i) => {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      log[toLocalDateStr(d)] = dayHabits.map(v => !!v);
-    });
-    return log;
-  });
+  const [habitLog, setHabitLog] = useState(() => loadState("habitLog", {}));
 
   // ── Restore from cloud on startup ──
   const [cloudLoaded, setCloudLoaded] = useState(false);
