@@ -4,11 +4,16 @@
 -- Tables
 CREATE TABLE IF NOT EXISTS devices (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT now());
 
-CREATE TABLE IF NOT EXISTS profiles (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT UNIQUE NOT NULL REFERENCES devices(device_id), name TEXT DEFAULT '', age TEXT DEFAULT '', height TEXT DEFAULT '', goal_weight TEXT DEFAULT '', notes TEXT DEFAULT '', theme TEXT DEFAULT 'arctic', text_size TEXT DEFAULT 'medium', workout_mode TEXT DEFAULT 'gym', calorie_goal INT DEFAULT 2000, next_workout_week INT DEFAULT 1, next_workout_day INT DEFAULT 1, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now());
+CREATE TABLE IF NOT EXISTS profiles (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT UNIQUE NOT NULL REFERENCES devices(device_id), name TEXT DEFAULT '', age TEXT DEFAULT '', height TEXT DEFAULT '', goal_weight TEXT DEFAULT '', notes TEXT DEFAULT '', theme TEXT DEFAULT 'arctic', text_size TEXT DEFAULT 'medium', workout_mode TEXT DEFAULT 'gym', calorie_goal INT DEFAULT 2000, next_workout_week INT DEFAULT 1, next_workout_day INT DEFAULT 1, rounds JSONB, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now());
 
 CREATE TABLE IF NOT EXISTS exercise_logs (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, exercise_name TEXT NOT NULL, set_index INT NOT NULL, weight TEXT, reps TEXT, done BOOLEAN DEFAULT false, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date, exercise_name, set_index));
 
-CREATE TABLE IF NOT EXISTS sessions (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, week INT NOT NULL, day INT NOT NULL, status TEXT DEFAULT 'active', started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
+CREATE TABLE IF NOT EXISTS sessions (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, week INT NOT NULL, day INT NOT NULL, status TEXT DEFAULT 'active', routine TEXT DEFAULT 'sh90', label TEXT, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
+
+-- Migration for existing deployments (run once in the Supabase SQL editor):
+-- ALTER TABLE sessions ADD COLUMN IF NOT EXISTS routine TEXT DEFAULT 'sh90';
+-- ALTER TABLE sessions ADD COLUMN IF NOT EXISTS label TEXT;
+-- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS rounds JSONB;
 
 CREATE TABLE IF NOT EXISTS weight_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, weight DECIMAL NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
 
@@ -18,7 +23,10 @@ CREATE TABLE IF NOT EXISTS habit_notes (id UUID DEFAULT gen_random_uuid() PRIMAR
 
 CREATE TABLE IF NOT EXISTS step_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, steps INT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
 
-CREATE TABLE IF NOT EXISTS food_entries (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, entry_id BIGINT NOT NULL, food_text TEXT NOT NULL, logged_at TEXT, items JSONB DEFAULT '[]', calories INT DEFAULT 0, protein INT DEFAULT 0, carbs INT DEFAULT 0, fat INT DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, entry_id));
+CREATE TABLE IF NOT EXISTS food_entries (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, entry_id BIGINT NOT NULL, food_text TEXT NOT NULL, category TEXT DEFAULT '', logged_at TEXT, items JSONB DEFAULT '[]', calories INT DEFAULT 0, protein INT DEFAULT 0, carbs INT DEFAULT 0, fat INT DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, entry_id));
+
+-- Migration for existing deployments (run once in the Supabase SQL editor):
+-- ALTER TABLE food_entries ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS exercise_swaps (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), week INT NOT NULL, day INT NOT NULL, original_exercise TEXT NOT NULL, swapped_exercise TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, week, day, original_exercise));
 

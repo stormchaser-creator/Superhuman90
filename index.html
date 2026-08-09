@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SH90">
   <meta name="theme-color" content="#0ea5e9">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://generativelanguage.googleapis.com; manifest-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://generativelanguage.googleapis.com; manifest-src 'self';">
   <title>Superhuman90</title>
 
   <!-- PWA Manifest + Icons -->
@@ -38,7 +38,7 @@
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.2/dist/umd/supabase.js" integrity="sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.26.9/babel.min.js" integrity="sha384-pKNXKj7jF9BNMkQyGWg5YLfoPyqBa/gf7wjTSoTGQlwxbZB+sabJuKyOHR6JQvTd" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -82,7 +82,7 @@
       };
     };
     const saveState = (key, value) => {
-      try { localStorage.setItem("sh90_" + key, JSON.stringify(value)); } catch {}
+      try { localStorage.setItem("sh90_" + key, JSON.stringify(value)); } catch (e) { console.warn("SH90: localStorage write failed for " + key + ":", e); }
     };
 
     // ── Supabase Setup ──
@@ -104,9 +104,18 @@
       var params = new URLSearchParams(window.location.search);
       var urlDevice = params.get("device");
       if (urlDevice) {
-        localStorage.setItem("sh90_device_id", urlDevice);
+        var existingId = localStorage.getItem("sh90_device_id");
+        var uuidOk = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(urlDevice);
+        // Silent identity rebinding is an account-takeover primitive — validate and confirm
+        if (uuidOk && urlDevice !== existingId &&
+            (!existingId || confirm("Link this device to an existing Superhuman90 account?\n\nThis replaces the data currently on this device with the linked account's cloud data."))) {
+          if (existingId) clearAllSh90Data();
+          localStorage.setItem("sh90_device_id", urlDevice);
+          window.history.replaceState({}, "", window.location.pathname);
+          return urlDevice;
+        }
         window.history.replaceState({}, "", window.location.pathname);
-        return urlDevice;
+        if (existingId) return existingId;
       }
       let id = localStorage.getItem("sh90_device_id");
       // Auto-reassign: no ID yet, or stuck with old shared default with no local profile
@@ -133,26 +142,44 @@
     const syncToSupabase = async (table, data, conflictCols) => {
       if (!supabase) return;
       try {
-        await supabase.from(table).upsert(data, { onConflict: conflictCols });
+        // supabase-js v2 returns {error} instead of throwing — check it or failures are invisible
+        const { error } = await supabase.from(table).upsert(data, { onConflict: conflictCols });
+        if (error) console.warn("SH90: sync failed for " + table + ":", error.message || error);
       } catch (e) { console.warn("Sync failed for " + table + ":", e); }
+    };
+
+    // Delete cloud rows when local data is removed — otherwise a future restore resurrects them
+    const deleteFromSupabase = async (table, match) => {
+      if (!supabase) return;
+      try {
+        const { error } = await supabase.from(table).delete().match({ device_id: DEVICE_ID, ...match });
+        if (error) console.warn("SH90: delete failed for " + table + ":", error.message || error);
+      } catch (e) { console.warn("Delete failed for " + table + ":", e); }
     };
 
     const loadFromSupabase = async (table, filters) => {
       if (!supabase) return null;
       try {
-        let query = supabase.from(table).select("*").eq("device_id", DEVICE_ID);
-        if (filters) {
-          Object.entries(filters).forEach(function(entry) {
-            query = query.eq(entry[0], entry[1]);
-          });
+        // Page through results — PostgREST silently caps un-ranged selects at 1000 rows,
+        // and a full program's exercise_logs exceeds that. Stable order is required or
+        // pages can overlap/skip; any page error aborts (partial data must not restore).
+        const PAGE = 1000;
+        let all = [];
+        for (let from = 0; ; from += PAGE) {
+          let q = supabase.from(table).select("*").eq("device_id", DEVICE_ID).order("id").range(from, from + PAGE - 1);
+          if (filters) Object.entries(filters).forEach(([k, v]) => { q = q.eq(k, v); });
+          const { data, error } = await q;
+          if (error) { console.warn("SH90: load failed for " + table + ":", error.message); return null; }
+          if (!data || data.length === 0) break;
+          all = all.concat(data);
+          if (data.length < PAGE) break;
         }
-        const { data, error } = await query;
-        if (error) throw error;
-        // Client-side safety: strip any rows that don't belong to this device
-        return data ? data.filter(function(r) { return r.device_id === DEVICE_ID; }) : data;
-      } catch (e) { console.warn("Load failed for " + table + ":", e); return null; }
+        return all.filter(r => r.device_id === DEVICE_ID);
+      } catch (e) {
+        console.warn("Load failed for " + table + ":", e);
+        return null;
+      }
     };
-
     // Sync profile to Supabase
     const syncProfile = async (profileData, opts) => {
       if (!supabase) return;
@@ -172,8 +199,21 @@
         if (opts.calorieGoal !== undefined) row.calorie_goal = opts.calorieGoal;
         if (opts.nextWorkoutWeek !== undefined) row.next_workout_week = opts.nextWorkoutWeek;
         if (opts.nextWorkoutDay !== undefined) row.next_workout_day = opts.nextWorkoutDay;
+        if (opts.rounds !== undefined) row.rounds = JSON.stringify(opts.rounds);
       }
-      syncToSupabase("profiles", row, "device_id");
+      try {
+        const { error } = await supabase.from("profiles").upsert(row, { onConflict: "device_id" });
+        if (error) {
+          // Older deployments lack the rounds column — retry without it
+          if (row.rounds !== undefined && String(error.message || "").toLowerCase().includes("rounds")) {
+            const { rounds, ...rowBase } = row;
+            const retry = await supabase.from("profiles").upsert(rowBase, { onConflict: "device_id" });
+            if (retry.error) console.warn("SH90: profile sync failed:", retry.error.message);
+          } else {
+            console.warn("SH90: profile sync failed:", error.message || error);
+          }
+        }
+      } catch (e) { console.warn("SH90: profile sync failed:", e); }
     };
 
     // Sync exercise log entry
@@ -195,16 +235,32 @@
     // Sync session
     const syncSession = async (date, session) => {
       if (!supabase) return;
-      syncToSupabase("sessions", {
+      const row = {
         device_id: DEVICE_ID,
         date: date,
-        week: session.week || 1,
+        week: session.week ?? 1,
         day: session.day || 1,
         status: session.status || "active",
+        routine: session.routine || "sh90",
+        label: session.label || null,
         started_at: session.startedAt || null,
         completed_at: session.completedAt || null,
         updated_at: new Date().toISOString(),
-      }, "device_id,date");
+      };
+      try {
+        const { error } = await supabase.from("sessions").upsert(row, { onConflict: "device_id,date" });
+        if (error) {
+          // Older deployments lack routine/label columns — retry without rather than losing the session
+          const msg = String(error.message || "").toLowerCase();
+          if (msg.includes("routine") || msg.includes("label")) {
+            const { routine, label, ...rowBase } = row;
+            const retry = await supabase.from("sessions").upsert(rowBase, { onConflict: "device_id,date" });
+            if (retry.error) console.warn("SH90: session sync failed:", retry.error.message);
+          } else {
+            console.warn("SH90: session sync failed:", error.message || error);
+          }
+        }
+      } catch (e) { console.warn("SH90: session sync failed:", e); }
     };
 
     // Sync weight
@@ -250,7 +306,7 @@
     // Sync food entry
     const syncFoodEntry = async (entry, date) => {
       if (!supabase) return;
-      syncToSupabase("food_entries", {
+      const row = {
         device_id: DEVICE_ID,
         date: date,
         entry_id: entry.id,
@@ -262,7 +318,20 @@
         protein: entry.protein || 0,
         carbs: entry.carbs || 0,
         fat: entry.fat || 0,
-      }, "device_id,entry_id");
+      };
+      try {
+        const { error } = await supabase.from("food_entries").upsert(row, { onConflict: "device_id,entry_id" });
+        if (error) {
+          // Older deployments lack the category column (PGRST204) — retry without it rather than losing the entry
+          if (String(error.message || "").toLowerCase().includes("category")) {
+            const { category, ...rowNoCat } = row;
+            const retry = await supabase.from("food_entries").upsert(rowNoCat, { onConflict: "device_id,entry_id" });
+            if (retry.error) console.warn("SH90: food sync failed:", retry.error.message);
+          } else {
+            console.warn("SH90: food sync failed:", error.message || error);
+          }
+        }
+      } catch (e) { console.warn("SH90: food sync failed:", e); }
     };
 
     // Sync exercise swap
@@ -291,11 +360,15 @@
     // ── Full Migration: push all localStorage data to Supabase ──
     const migrateToSupabase = async () => {
       if (!supabase) return;
+      // Local flag, not devices-row existence: registerDevice() races this check,
+      // and its upsert landing first would permanently skip migration
+      if (localStorage.getItem("sh90_migrated")) return;
       try {
         // Check if device already exists
         var existing = await supabase.from("devices").select("device_id").eq("device_id", DEVICE_ID).single();
         if (existing.data) {
           console.log("SH90: Device already registered, skipping migration");
+          localStorage.setItem("sh90_migrated", "1");
           return;
         }
       } catch (e) { /* device not found, proceed with migration */ }
@@ -396,6 +469,7 @@
       });
 
       console.log("SH90: Migration complete!");
+      localStorage.setItem("sh90_migrated", "1");
     };
     migrateToSupabase();
 
@@ -406,7 +480,8 @@
       try {
         // Check if Supabase has data for this device
         const profileRows = await loadFromSupabase("profiles");
-        if (!profileRows || profileRows.length === 0) return null;
+        if (profileRows === null) return null;                 // load failed — retry next launch
+        if (profileRows.length === 0) return { empty: true };   // cloud confirmed empty for this device
         const p = profileRows[0];
         const restored = {};
 
@@ -422,6 +497,9 @@
         if (p.next_workout_week && p.next_workout_day) {
           restored.nextWorkoutPos = { week: p.next_workout_week, day: p.next_workout_day };
         }
+        if (p.rounds) {
+          try { restored.rounds = typeof p.rounds === "string" ? JSON.parse(p.rounds) : p.rounds; } catch (e) {}
+        }
 
         // Sessions: rows → { "2026-02-18": { week, day, status, completedAt } }
         const sessionRows = await loadFromSupabase("sessions");
@@ -430,6 +508,7 @@
           sessionRows.forEach(function(r) {
             sessionLog[r.date] = {
               week: r.week, day: r.day, status: r.status,
+              routine: r.routine || "sh90", label: r.label || undefined,
               startedAt: r.started_at, completedAt: r.completed_at,
             };
           });
@@ -512,6 +591,7 @@
             if (!foodLog[r.date]) foodLog[r.date] = { entries: [] };
             foodLog[r.date].entries.push({
               id: r.entry_id, text: r.food_text, time: r.logged_at,
+              category: r.category || "",
               items: typeof r.items === "string" ? JSON.parse(r.items) : (r.items || []),
               cal: r.calories || 0, protein: r.protein || 0,
               carbs: r.carbs || 0, fat: r.fat || 0,
@@ -536,7 +616,10 @@
         if (restored.swappedExercises) saveState("swappedExercises", restored.swappedExercises);
         if (restored.workoutSelection) saveState("workoutSelection", restored.workoutSelection);
         if (restored.foodLog) saveState("foodLog", restored.foodLog);
+        if (restored.rounds && restored.rounds.current) saveState("rounds", restored.rounds);
 
+        localStorage.setItem("sh90_restore_done", "1");
+        window.__sh90_didCloudRestore = true;
         console.log("SH90: Restored from cloud");
         return restored;
       } catch (e) {
@@ -553,10 +636,24 @@
     window.__sh90_ready = false;
     (async function() {
       try {
-        // Only restore if localStorage looks empty (no profile saved)
-        var hasLocal = localStorage.getItem("sh90_profile");
-        if (!hasLocal) {
-          await restoreFromCloud();
+        // Backfill the restore-done flag for established devices with real data
+        // (before this flag existed, presence of sh90_profile gated restore — but a
+        // failed first restore also wrote sh90_profile, permanently disabling retry)
+        if (!localStorage.getItem("sh90_restore_done")) {
+          try {
+            var _sl = JSON.parse(localStorage.getItem("sh90_sessionLog") || "{}");
+            var _hl = JSON.parse(localStorage.getItem("sh90_habitLog") || "{}");
+            var _pf = JSON.parse(localStorage.getItem("sh90_profile") || "{}");
+            if (Object.keys(_sl).length > 0 || Object.keys(_hl).length > 0 || (_pf && _pf.name)) {
+              localStorage.setItem("sh90_restore_done", "1");
+            }
+          } catch (e2) {}
+        }
+        // Restore until it either succeeds or the cloud confirms it has nothing —
+        // a transient failure (offline first launch) retries on the next launch
+        if (!localStorage.getItem("sh90_restore_done")) {
+          var data = await restoreFromCloud();
+          if (data && data.empty) localStorage.setItem("sh90_restore_done", "1");
         }
       } catch(e) { console.warn("SH90: Pre-render restore error:", e); }
       window.__sh90_ready = true;
@@ -690,38 +787,182 @@ const WORKOUT_DATA = {
   12:{1:{label:"LEGS A (DELOAD)",exercises:[{name:"Weighted Decline Sit Up HOLDS",sets:2,reps:"20-30s",result:null,notes:"hold in place, don't crunch"},{name:"Standing Calf Raise",sets:2,reps:"8-12",result:null,notes:null},{name:"Smith Machine Squat",sets:3,reps:"6",result:null,notes:"60% of your best 6 rep max"},{name:"Weighted Hip Extension",sets:1,reps:"6-8",result:null,notes:null},{name:"Single-Leg Leg Extension",sets:1,reps:"8-12",result:null,notes:"3-sec eccentric"},{name:"Prone Hamstring Curl",sets:1,reps:"8-12",result:null,notes:null},{name:"Hip Abduction",sets:1,reps:"8-12",result:null,notes:null},{name:"Cable Ab Crunch",sets:1,reps:"15-20",result:null,notes:null}]},2:{label:"TORSO A (DELOAD)",exercises:[{name:"Incline Smith Machine Bench Press",sets:3,reps:"6",result:null,notes:"60% of your best 6 rep max"},{name:"Wide-grip Lat Pulldown",sets:1,reps:"8-10",result:null,notes:null},{name:"Weighted Dip / Assisted Dip",sets:1,reps:"8-10",result:null,notes:null},{name:"Single-Arm Cable Row",sets:1,reps:"8-12",result:null,notes:null},{name:"Machine Chest Fly",sets:1,reps:"8-12",result:null,notes:null},{name:"Smith Machine Shrug",sets:2,reps:"6-10",result:null,notes:"2-sec hold deep stretch"},{name:"Plate Front Raise",sets:2,reps:"10-15",result:null,notes:null}]}},
 };
 // Fill weeks 6-8, 10-11 with same structure as 5 and 9 (same exercises, no results)
-[6,7,8].forEach(w => { WORKOUT_DATA[w] = JSON.parse(JSON.stringify(WORKOUT_DATA[5])); WORKOUT_DATA[w][1].exercises.forEach(e => e.result = null); });
+[6,7,8].forEach(w => { WORKOUT_DATA[w] = JSON.parse(JSON.stringify(WORKOUT_DATA[5])); Object.values(WORKOUT_DATA[w]).forEach(d => d.exercises.forEach(e => e.result = null)); });
 [10,11].forEach(w => { WORKOUT_DATA[w] = JSON.parse(JSON.stringify(WORKOUT_DATA[9])); });
 
-// ── Habit Data ──
-const HABIT_LABELS = ["Reading", "No ASPM", "10K Steps", "Workout", "Track Weight", "Track Food", "Deep Work", "Reflection"];
-const HABIT_ICONS = ["📖", "🚫", "🚶", "💪", "⚖️", "🍽️", "🧠", "🪞"];
-const habitHistory = [
-  // W1: Mon Jan 19 - Sat Jan 24
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
-  // Sun Jan 25 = REST
-  [1,1,1,0,1,1,1,1],
-  // W2: Mon Jan 26 - Sat Jan 31
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1],[1,1,0,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
-  // Sun Feb 1 = REST
-  [1,1,1,0,1,1,1,1],
-  // W3: Mon Feb 2 - Sat Feb 7
-  [1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,0,1,1,1],
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
-  // Sun Feb 8 = REST
-  [1,1,1,0,1,1,1,1],
-  // W4: Mon Feb 9 - Sat Feb 14
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,0,1,1,1],[1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
-  // Sun Feb 15 = REST
-  [1,1,1,0,1,1,1,1],
-  // W5: Mon Feb 16 - Wed Feb 18 (today)
-  [1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],
+// ── Omar Monthly Routine (weekday-based: 1=Mon … 7=Sun) ──
+const OMAR_DATA = {
+  1:{label:"BACK · CHEST · SHO · ARMS",desc:"Heavy day — 80% intensity",exercises:[
+    {name:"Inclined T-Bar Rows",sets:3,reps:"8 @ 80%",result:null,notes:"Back"},
+    {name:"T-Bar Pull Down",sets:3,reps:"8 @ 80%",result:null,notes:"Back"},
+    {name:"Hammer Straight Machine (Closed Grip)",sets:3,reps:"8 @ 80%",result:null,notes:"Back"},
+    {name:"Inclined Chest Press",sets:3,reps:"8 @ 80%",result:null,notes:"Chest"},
+    {name:"Seated Bench Press",sets:3,reps:"8 @ 80%",result:null,notes:"Chest"},
+    {name:"Cable Flyers",sets:3,reps:"15-20 @ 65%",result:null,notes:"Chest · 20-25 lbs"},
+    {name:"Shoulder Press (Hammer Machine)",sets:3,reps:"8 @ 80%",result:null,notes:"Shoulders"},
+    {name:"Lateral Raises",sets:3,reps:"8-10 @ 80%",result:null,notes:"Shoulders"},
+    {name:"Preacher Curl",sets:3,reps:"10 @ 80%",result:null,notes:"Arms"},
+    {name:"Triceps Pull Down",sets:3,reps:"10 @ 80%",result:null,notes:"Arms"}]},
+  2:{label:"LEGS & CALVES",desc:"Heavy day — 80% intensity",exercises:[
+    {name:"Leg Press",sets:4,reps:"8 @ 80%",result:null,notes:null},
+    {name:"Walking Lunges",sets:3,reps:"1 lap",result:null,notes:"30 lbs, inside classroom"},
+    {name:"Hip Bridges",sets:3,reps:"8 @ 80%",result:null,notes:null},
+    {name:"Leg Curl",sets:3,reps:"8-10 @ 80%",result:null,notes:null},
+    {name:"Leg Extensions",sets:3,reps:"8-10 @ 80%",result:null,notes:null},
+    {name:"Calf Raises",sets:4,reps:"12 @ 80%",result:null,notes:null}]},
+  3:{label:"ACTIVE RECOVERY",desc:"Off day — easy movement only",exercises:[
+    {name:"Cardio",sets:1,reps:"45 min",result:null,notes:"Easy pace"},
+    {name:"Abs",sets:1,reps:"10 min",result:null,notes:null}]},
+  4:{label:"SHOULDERS & BACK",desc:"Light day — 15 reps @ 65%",exercises:[
+    {name:"T Inclined Bar Machine",sets:3,reps:"15 @ 65%",result:null,notes:"Back"},
+    {name:"T Pull Down",sets:3,reps:"15 @ 65%",result:null,notes:"Back"},
+    {name:"Seated Closed Grip Bar Row",sets:3,reps:"15 @ 65%",result:null,notes:"Back"},
+    {name:"Reverse Pull Down Machine",sets:3,reps:"15 @ 65%",result:null,notes:"Back"},
+    {name:"Shoulder Press Machine",sets:3,reps:"15 @ 65%",result:null,notes:"Shoulders"},
+    {name:"Lateral Raises (Dumbbells)",sets:3,reps:"15 @ 65%",result:null,notes:"Shoulders"},
+    {name:"High Row with Barbell",sets:3,reps:"15 @ 65%",result:null,notes:"Shoulders"},
+    {name:"Posterior Shoulders Machine",sets:3,reps:"15 @ 65%",result:null,notes:"Shoulders"},
+    {name:"Abs",sets:1,reps:"10 min",result:null,notes:null}]},
+  5:{label:"LEGS",desc:"Light day — 15 reps @ 65%",exercises:[
+    {name:"Squats Machine",sets:3,reps:"15",result:null,notes:"3 plates each side"},
+    {name:"Hip Hyperextension on Bench",sets:3,reps:"15 @ 65%",result:null,notes:null},
+    {name:"Leg Curls",sets:3,reps:"15 @ 65%",result:null,notes:null},
+    {name:"Walking Lunges",sets:3,reps:"1 lap",result:null,notes:"Inside classroom, both ways"},
+    {name:"Leg Extensions",sets:3,reps:"15 @ 65%",result:null,notes:null},
+    {name:"Standing Calf Raises",sets:4,reps:"20 @ 70%",result:null,notes:null}]},
+  6:{label:"CHEST & ARMS",desc:"Light day — 15 reps @ 65%",exercises:[
+    {name:"Inclined Press",sets:3,reps:"15 @ 65%",result:null,notes:"Chest"},
+    {name:"Flat Bench Press",sets:3,reps:"15 @ 65%",result:null,notes:"Chest"},
+    {name:"Dips Machine",sets:3,reps:"15 @ 65%",result:null,notes:"Chest"},
+    {name:"Inclined Dumbbell Fly",sets:3,reps:"15 @ 65%",result:null,notes:"Chest"},
+    {name:"Flat Dumbbells",sets:3,reps:"15 @ 65%",result:null,notes:"Chest"},
+    {name:"Preacher Curl",sets:3,reps:"15 @ 65%",result:null,notes:"Arms"},
+    {name:"Straight Bar Pull Down (Triceps)",sets:3,reps:"15 @ 65%",result:null,notes:"Arms"},
+    {name:"Standing Biceps Curl",sets:3,reps:"15 @ 65%",result:null,notes:"Arms"},
+    {name:"Rope Extension",sets:3,reps:"15 @ 65%",result:null,notes:"Arms"},
+    {name:"Hammer Curl",sets:3,reps:"15 @ 65%",result:null,notes:"Arms"},
+    {name:"Overhead Crunch Extensions",sets:3,reps:"15 @ 65%",result:null,notes:"Arms · 60 lbs"},
+    {name:"Abs",sets:1,reps:"10 min",result:null,notes:null}]},
+  7:{label:"REST",desc:"Full rest day",exercises:[]},
+};
+
+// ── PHAT — Power Hypertrophy Adaptive Training, Dr. Layne Norton (weekday-based: 1=Mon … 7=Sun) ──
+const PHAT_DATA = {
+  1:{label:"UPPER POWER",desc:"3-5 reps heavy compounds · 3-5 min rest · move max weight",exercises:[
+    {name:"Bent Over or Pendlay Rows",sets:3,reps:"3-5",result:null,notes:"Pulling power"},
+    {name:"Weighted Pull-Ups",sets:2,reps:"6-10",result:null,notes:"Assistance pulling"},
+    {name:"Rack Chins",sets:2,reps:"6-10",result:null,notes:"Auxiliary pulling"},
+    {name:"Flat Dumbbell Presses",sets:3,reps:"3-5",result:null,notes:"Pressing power"},
+    {name:"Weighted Dips",sets:2,reps:"6-10",result:null,notes:"Assistance pressing"},
+    {name:"Seated Dumbbell Shoulder Presses",sets:3,reps:"6-10",result:null,notes:"Assistance pressing"},
+    {name:"Cambered Bar Curls",sets:3,reps:"6-10",result:null,notes:"Auxiliary curling"},
+    {name:"Skull Crushers",sets:3,reps:"6-10",result:null,notes:"Auxiliary extension"}]},
+  2:{label:"LOWER POWER",desc:"3-5 reps heavy compounds · 3-5 min rest",exercises:[
+    {name:"Squats",sets:3,reps:"3-5",result:null,notes:"Pressing power"},
+    {name:"Hack Squats",sets:2,reps:"6-10",result:null,notes:"Assistance pressing"},
+    {name:"Leg Extensions",sets:2,reps:"6-10",result:null,notes:"Assistance extension"},
+    {name:"Stiff-Legged Deadlifts",sets:3,reps:"5-8",result:null,notes:"Assistance pulling"},
+    {name:"Glute Ham Raises or Lying Leg Curls",sets:2,reps:"6-10",result:null,notes:null},
+    {name:"Standing Calf Raise",sets:3,reps:"6-10",result:null,notes:null},
+    {name:"Seated Calf Raise",sets:2,reps:"6-10",result:null,notes:null}]},
+  3:{label:"REST",desc:"Full rest day",exercises:[]},
+  4:{label:"BACK & SHOULDERS HYP",desc:"Start 6×3 speed @ 65-70% of 3-5RM · then 8-20 reps · 1-2 min rest",exercises:[
+    {name:"Bent Over or Pendlay Rows",sets:6,reps:"3 (speed)",result:null,notes:"65-70% of 3-5 rep max"},
+    {name:"Rack Chins",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Seated Cable Row",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Dumbbell Rows or Shrugs (incline braced)",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Close Grip Pulldowns",sets:2,reps:"15-20",result:null,notes:null},
+    {name:"Seated Dumbbell Presses",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Upright Rows",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Side Lateral Raises (DBs or cables)",sets:3,reps:"12-20",result:null,notes:null}]},
+  5:{label:"LOWER HYPERTROPHY",desc:"Start 6×3 speed squats @ 65-70% · then 8-20 reps · 1-2 min rest",exercises:[
+    {name:"Squats",sets:6,reps:"3 (speed)",result:null,notes:"65-70% of 3-5 rep max"},
+    {name:"Hack Squats",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Leg Presses",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Leg Extensions",sets:3,reps:"15-20",result:null,notes:null},
+    {name:"Romanian Deadlifts",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Lying Leg Curls",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Seated Leg Curls",sets:2,reps:"15-20",result:null,notes:null},
+    {name:"Donkey Calf Raises",sets:4,reps:"10-15",result:null,notes:null},
+    {name:"Seated Calf Raises",sets:3,reps:"15-20",result:null,notes:null}]},
+  6:{label:"CHEST & ARMS HYP",desc:"Start 6×3 speed presses @ 65-70% · then 8-20 reps · 1-2 min rest",exercises:[
+    {name:"Flat Dumbbell Presses",sets:6,reps:"3 (speed)",result:null,notes:"65-70% of 3-5 rep max"},
+    {name:"Incline Dumbbell Presses",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Hammer Strength Chest Press",sets:3,reps:"12-15",result:null,notes:null},
+    {name:"Incline Cable Flyes",sets:2,reps:"15-20",result:null,notes:null},
+    {name:"Cambered Bar Preacher Curls",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Dumbbell Concentration Curls",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Spider Curls (incline braced)",sets:2,reps:"15-20",result:null,notes:null},
+    {name:"Seated Tricep Extension (cambered bar)",sets:3,reps:"8-12",result:null,notes:null},
+    {name:"Cable Pressdowns (rope)",sets:2,reps:"12-15",result:null,notes:null},
+    {name:"Cable Kickbacks",sets:2,reps:"15-20",result:null,notes:null}]},
+  7:{label:"REST",desc:"Do NOT train to failure the first 2-4 weeks. Rotate power movements every 2-3 weeks. Deload every 6-12 weeks.",exercises:[]},
+};
+
+// ── Routine Registry ──
+const ROUTINES = {
+  sh90: { name: "Superhuman 90", icon: "🦸", desc: "12-week program · 6-day rolling split" },
+  omar: { name: "Omar Monthly", icon: "📅", desc: "Mon-Sun weekly split · heavy + light days" },
+  phat: { name: "PHAT", icon: "⚡", desc: "Layne Norton · power + hypertrophy" },
+  yoga: { name: "Yoga", icon: "🧘", desc: "YouTube-guided sessions" },
+};
+const getRoutineDayData = (routineKey, w, d) => {
+  if (routineKey === "omar") return OMAR_DATA[d] || null;
+  if (routineKey === "phat") return PHAT_DATA[d] || null;
+  if (routineKey === "yoga") return null;
+  return WORKOUT_DATA[w]?.[d] || null;
+};
+// ISO weekday for a YYYY-MM-DD date string: 1=Mon … 7=Sun
+const isoWeekday = (ds) => { const g = new Date(ds + "T12:00:00").getDay(); return g === 0 ? 7 : g; };
+
+// ── Curated Yoga Library (YouTube) ──
+const YOGA_VIDEOS = [
+  { id: "4pKly2JojMw", title: "10 min Morning Yoga Full Body Stretch", channel: "Yoga with Kassandra", duration: "10 min", category: "morning", level: "all" },
+  { id: "UEEsdXn8oG8", title: "Wake Up Yoga — 11-Minute Morning Practice", channel: "Yoga With Adriene", duration: "11 min", category: "morning", level: "all" },
+  { id: "djLCTwi3PmU", title: "20 Min Morning Yoga Flow — Every Day Full Body", channel: "Charlie Follows", duration: "20 min", category: "morning", level: "all" },
+  { id: "b1H3xO3x_Js", title: "Full Body Flow — 20-Minute Practice", channel: "Yoga With Adriene", duration: "20 min", category: "flow", level: "all" },
+  { id: "9v_BhVCFjXk", title: "Energizing 22 Min Full Body Vinyasa", channel: "Breathe and Flow", duration: "22 min", category: "flow", level: "all" },
+  { id: "65NZMuQpSH4", title: "25 Min Full Body Yoga Flow", channel: "Charlie Follows", duration: "25 min", category: "flow", level: "intermediate" },
+  { id: "DYQHo7OboEM", title: "Yin Yoga for Flexibility — Tight Hips & Hamstrings", channel: "Boho Beautiful Yoga", duration: "30 min", category: "stretch", level: "all" },
+  { id: "vamxTLoTwGg", title: "Deep Athletic Stretch for Flexibility", channel: "Boho Beautiful Yoga", duration: "38 min", category: "stretch", level: "all" },
+  { id: "W9g7jqH0orM", title: "20 Minute Full Body Power Yoga Workout", channel: "Sean Vigue Fitness", duration: "20 min", category: "power", level: "all" },
+  { id: "YUt0QzBHsR4", title: "30 Min Power Yoga EDGE", channel: "Travis Eliot", duration: "30 min", category: "power", level: "intermediate" },
+  { id: "4CZy78RCCxw", title: "Strong 40 Minute Vinyasa Yoga Flow", channel: "Breathe and Flow", duration: "40 min", category: "power", level: "intermediate" },
+  { id: "TUFj6P_FdhU", title: "10 min Evening Yoga Stretch — Bedtime Yoga", channel: "Yoga with Kassandra", duration: "10 min", category: "evening", level: "beginner" },
+  { id: "BiWDsfZ3zbo", title: "Wind Down — 12-Minute Bedtime Yoga", channel: "Yoga With Adriene", duration: "12 min", category: "evening", level: "all" },
+  { id: "nPcLlcw82Lc", title: "20 Min Beginner Bedtime Stretch & Relax", channel: "Yoga with Kassandra", duration: "20 min", category: "evening", level: "beginner" },
+  { id: "v7AYKMP6rOE", title: "Yoga for Complete Beginners — 20 Minute Home Workout", channel: "Yoga With Adriene", duration: "20 min", category: "beginner", level: "beginner" },
+  { id: "oBu-pQG6sTY", title: "Ease Into It — 30 Days of Yoga, Day 1", channel: "Yoga With Adriene", duration: "35 min", category: "beginner", level: "beginner" },
 ];
 
-const WEIGHT_DATA = [162.6,162.0,160.0,159.6,158.6,160.2,159.8];
+// ── Home Recovery / Wellness Protocols ──
+const WELLNESS_ITEMS = {
+  hbot:       { icon: "🫧", name: "HBOT", detail: "60 min session", tip: "Recovery, cognition · 3-5×/wk" },
+  redlight:   { icon: "🔴", name: "Red Light", detail: "10-15 min panel", tip: "Morning or post-workout" },
+  neuronic:   { icon: "🧠", name: "Neuronic Helmet", detail: "20 min PBM", tip: "Follow device protocol" },
+  hydrogen:   { icon: "💨", name: "H₂ Inhalation", detail: "30-60 min", tip: "Pairs well with deep work" },
+  powerplate: { icon: "📳", name: "PowerPlate", detail: "10 min activation", tip: "Pre-workout or wake-up" },
+  mobility:   { icon: "🤸", name: "Mobility + Free Weights", detail: "15 min light circuit", tip: "Rest-day blood flow" },
+};
+// Suggested daily stack by weekday (1=Mon … 7=Sun)
+const WELLNESS_STACK = {
+  1: ["powerplate", "redlight"],
+  2: ["hbot", "neuronic"],
+  3: ["hydrogen", "redlight", "mobility"],
+  4: ["powerplate", "neuronic"],
+  5: ["hbot", "redlight"],
+  6: ["hydrogen", "neuronic"],
+  7: ["hbot", "mobility", "redlight"],
+};
+
+// ── Habit Data ──
+const HABIT_LABELS = ["Reading", "No ASPM", "5K Steps", "Workout", "Track Weight", "Track Food", "Deep Work", "Reflection"];
+const HABIT_ICONS = ["📖", "🚫", "🚶", "💪", "⚖️", "🍽️", "🧠", "🪞"];
+// Daily step goal
+const STEP_GOAL = 5000;
+// How much each habit counts toward the daily completion % (Track Weight counts half)
+const HABIT_WEIGHTS = [1, 1, 1, 1, 0.5, 1, 1, 1];
+const HABIT_WEIGHT_TOTAL = HABIT_WEIGHTS.reduce((a, b) => a + b, 0);
 
 // ── Font Size Scaler ──
 const TEXT_OFFSETS = { small: 0, medium: 1, large: 3, giant: 5, really: 8 };
@@ -784,6 +1025,41 @@ function SuperhumanApp() {
   const [profile, setProfile] = useState(loadProfile);
   const [textSize, setTextSize] = useState(() => { const s = loadState("textSize", "medium"); return ["small","medium","large","giant","really"].includes(s) ? s : "medium"; });
   const [workoutMode, setWorkoutMode] = useState(() => { const m = loadState("workoutMode", "gym"); return ["gym","home","bodyweight"].includes(m) ? m : "gym"; });
+  // Active workout routine (sh90 | omar | phat | yoga)
+  const [routine, setRoutine] = useState(() => { const r = loadState("routine", "sh90"); return ROUTINES[r] ? r : "sh90"; });
+  // 90-day round tracking: { current, startDate, history: [{round, startDate, endDate, workoutsCompleted}] }
+  const [rounds, setRounds] = useState(() => {
+    const saved = loadState("rounds", null);
+    if (saved && saved.current) return saved;
+    // First run with round tracking: derive from existing session history
+    const sl = loadState("sessionLog", {});
+    const completedDates = Object.entries(sl)
+      .filter(([_, s]) => s.status === "completed")
+      .map(([date]) => date)
+      .sort();
+    const today = toLocalDateStr(new Date());
+    // Only auto-archive on the ESTABLISHED device that lived through round 1 —
+    // a freshly cloud-restored device must not fabricate a new round and reset
+    // the position that was just restored
+    if (completedDates.length >= 60 && !window.__sh90_didCloudRestore) {
+      // A prior 90-day round was (nearly) finished — archive it as Round 1, start Round 2 today
+      window.__sh90_startFreshPos = true;
+      return {
+        current: 2, startDate: today,
+        history: [{ round: 1, startDate: completedDates[0], endDate: completedDates[completedDates.length - 1], workoutsCompleted: completedDates.length }],
+      };
+    }
+    return { current: 1, startDate: completedDates[0] || today, history: [] };
+  });
+  // Wellness / recovery protocol log: { "2026-08-09": { hbot: true, redlight: true } }
+  const [wellnessLog, setWellnessLog] = useState(() => loadState("wellnessLog", {}));
+  // AI Coach chat: [{role: "user"|"model", text}]
+  const [coachChat, setCoachChat] = useState(() => loadState("coachChat", []));
+  const [coachInput, setCoachInput] = useState("");
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachError, setCoachError] = useState("");
+  const coachEndRef = React.useRef(null);
+  useEffect(() => { coachEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [coachChat, coachLoading]);
   const [expandedFaq, setExpandedFaq] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
@@ -819,6 +1095,26 @@ function SuperhumanApp() {
   const todayStr = toLocalDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
+  // Roll forward at midnight / on resume — a PWA left open overnight must not
+  // keep logging habits, weight, and workouts against yesterday's date
+  const prevTodayRef = React.useRef(todayStr);
+  const [, setDateTick] = useState(0);
+  useEffect(() => {
+    const checkDate = () => {
+      const newToday = toLocalDateStr(new Date());
+      if (newToday !== prevTodayRef.current) {
+        const old = prevTodayRef.current;
+        prevTodayRef.current = newToday;
+        setSelectedDate(sel => (sel === old ? newToday : sel));
+        setDateTick(x => x + 1); // re-render so the TODAY highlight moves even when browsing another date
+      }
+    };
+    const iv = setInterval(checkDate, 60000);
+    document.addEventListener("visibilitychange", checkDate);
+    window.addEventListener("focus", checkDate);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", checkDate); window.removeEventListener("focus", checkDate); };
+  }, []);
+
   // Session log: { "2026-02-18": { week: 5, day: 1, completedAt: "...", exercises: {...} } }
   const [sessionLog, setSessionLog] = useState(() => loadState("sessionLog", {}));
 
@@ -839,11 +1135,16 @@ function SuperhumanApp() {
   const [habitLog, setHabitLog] = useState(() => loadState("habitLog", {}));
 
   // ── Restore from cloud on startup ──
+  // Only when this device has NO local data (fresh install / linked device).
+  // An established device's localStorage is canonical — restoring over it
+  // reverts anything the cloud missed (offline workouts, unsynced set logs).
   const [cloudLoaded, setCloudLoaded] = useState(false);
   useEffect(() => {
     if (typeof window.__sh90_restoreFromCloud !== "function") return;
+    if (localStorage.getItem("sh90_restore_done")) { setCloudLoaded(true); return; }
     window.__sh90_restoreFromCloud().then(function(data) {
-      if (!data) { setCloudLoaded(true); return; }
+      if (data && data.empty) localStorage.setItem("sh90_restore_done", "1");
+      if (!data || data.empty) { setCloudLoaded(true); return; }
       // Hydrate all React state from restored cloud data
       if (data.profile) setProfile(data.profile);
       if (data.theme) setTheme(data.theme);
@@ -860,6 +1161,7 @@ function SuperhumanApp() {
       if (data.swappedExercises) setSwappedExercises(data.swappedExercises);
       if (data.workoutSelection) setWorkoutSelection(data.workoutSelection);
       if (data.foodLog) setFoodLog(data.foodLog);
+      if (data.rounds && data.rounds.current) setRounds(data.rounds);
       setCloudLoaded(true);
     });
   }, []);
@@ -881,6 +1183,18 @@ function SuperhumanApp() {
   useEffect(() => { saveState("foodLog", foodLog); }, [foodLog]);
   useEffect(() => { saveState("calorieGoal", calorieGoal); syncProfile(profile, { calorieGoal: calorieGoal }); }, [calorieGoal]);
   useEffect(() => saveState("calorieApiKey", calorieApiKey), [calorieApiKey]);
+  useEffect(() => { saveState("routine", routine); }, [routine]);
+  useEffect(() => { saveState("rounds", rounds); syncProfile(profile, { rounds: rounds }); }, [rounds]);
+  useEffect(() => { saveState("wellnessLog", wellnessLog); }, [wellnessLog]);
+  useEffect(() => { saveState("coachChat", coachChat.slice(-40)); }, [coachChat]);
+
+  // One-time: if round migration archived a finished round, restart the program position at W1 D1
+  useEffect(() => {
+    if (window.__sh90_startFreshPos) {
+      window.__sh90_startFreshPos = false;
+      setNextWorkoutPos({ week: 1, day: 1 });
+    }
+  }, []);
 
   const isToday = selectedDate === todayStr;
   const selectedDateObj = new Date(selectedDate + "T12:00:00");
@@ -900,6 +1214,20 @@ function SuperhumanApp() {
     });
   };
 
+  // Debounced per-set cloud sync (typing in weight/reps fires per keystroke)
+  const setSyncTimers = React.useRef({});
+  const queueSetSync = (date, exName, si, entry) => {
+    const k = `${date}-${exName}-${si}`;
+    clearTimeout(setSyncTimers.current[k]);
+    setSyncTimers.current[k] = setTimeout(() => syncExerciseLog(date, exName, si, entry), 800);
+  };
+  const stepSyncTimers = React.useRef({});
+  const queueStepSync = (date, steps) => {
+    clearTimeout(stepSyncTimers.current[date]);
+    stepSyncTimers.current[date] = setTimeout(() => syncSteps(date, steps), 800);
+  };
+  const cancelStepSync = (date) => clearTimeout(stepSyncTimers.current[date]);
+
   // Get session for selected date
   const selectedSession = sessionLog[selectedDate];
   const isSessionActive = selectedSession?.status === "active";
@@ -911,14 +1239,14 @@ function SuperhumanApp() {
     if (nextWorkoutPos && nextWorkoutPos.week && nextWorkoutPos.day) {
       return { ...nextWorkoutPos };
     }
-    // Fallback for first load / migration: derive from last completed session
+    // Fallback for first load / migration: derive from last completed SH90 session in the current round
     const completedSessions = Object.entries(sessionLog)
-      .filter(([_, s]) => s.status === "completed" && s.week && s.day)
+      .filter(([date, s]) => s.status === "completed" && s.week && s.day && (s.routine || "sh90") === "sh90" && date >= rounds.startDate)
       .sort((a, b) => b[0].localeCompare(a[0]));
     if (completedSessions.length === 0) return { week: 1, day: 1 };
     const last = completedSessions[0][1];
     const lastPos = (last.week - 1) * 6 + last.day;
-    const nextPos = Math.min(lastPos + 1, 72);
+    const nextPos = Math.min(lastPos + 1, 68); // linear 68 = W12 D2, the deload terminal
     const derived = {
       week: Math.floor((nextPos - 1) / 6) + 1,
       day: ((nextPos - 1) % 6) + 1,
@@ -950,7 +1278,7 @@ function SuperhumanApp() {
 
   // Start a workout session (today only — goes to active state)
   const startSession = () => {
-    var sess = { week: week, day: day, startedAt: new Date().toISOString(), status: "active" };
+    var sess = { week: week, day: day, routine: routine, startedAt: new Date().toISOString(), status: "active" };
     setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
     syncSession(selectedDate, sess);
   };
@@ -958,15 +1286,26 @@ function SuperhumanApp() {
   // Mark session complete and advance position
   const completeSession = () => {
     const sess = sessionLog[selectedDate];
+    const sessRoutine = sess?.routine || "sh90";
     var completedSess = { ...sess, completedAt: new Date().toISOString(), status: "completed" };
     setSessionLog(prev => ({ ...prev, [selectedDate]: completedSess }));
     syncSession(selectedDate, completedSess);
+    // Mirror into the habit-tab workout label so both tabs agree on what was done
+    if (sess?.day) {
+      const SH90_SHORT = { 1: "LEG A", 2: "TOR A", 3: "ARM A", 4: "LEG B", 5: "TOR B", 6: "ARM B" };
+      const selLabel = sessRoutine === "sh90"
+        ? (SH90_SHORT[sess.day] || `D${sess.day}`)
+        : ((getRoutineDayData(sessRoutine, sess.week, sess.day)?.label || "").split(" ")[0] || `D${sess.day}`);
+      const selOpt = { day: sess.day, label: selLabel };
+      setWorkoutSelection(prev => ({ ...prev, [selectedDate]: selOpt }));
+      syncWorkoutSelection(selectedDate, selOpt);
+    }
     // Auto-check Workout habit at 50%+ exercise completion
-    const cExercises = sess?.week && sess?.day ? (WORKOUT_DATA[sess.week]?.[sess.day]?.exercises || []) : [];
+    const cExercises = sess?.day ? (getRoutineDayData(sessRoutine, sess.week, sess.day)?.exercises || []) : [];
     if (cExercises.length > 0) {
       let cDone = 0;
       cExercises.forEach(ex => {
-        const dn = resolveDisplay(sess.week, sess.day, ex.name);
+        const dn = resolveDisplay(sess.week, sess.day, ex.name, sessRoutine);
         let allDone = ex.sets > 0;
         for (let s = 0; s < ex.sets; s++) {
           if (!logData[`${selectedDate}-${dn}-${s}`]?.done) { allDone = false; break; }
@@ -975,28 +1314,52 @@ function SuperhumanApp() {
       });
       if ((cDone / cExercises.length) >= 0.5) toggleHabit(3, true);
     }
-    // Advance from the SESSION's stored position, not from display state
-    const sessWeek = sess?.week || week;
-    const sessDay = sess?.day || day;
-    let nextDay = sessDay + 1, nextWeek = sessWeek;
+    // SH90 rolling schedule: advance from the SESSION's stored position, not from display state
+    if (sessRoutine === "sh90") {
+      advanceSh90Position(sess?.week || week, sess?.day || day, selectedDate);
+    }
+  };
+
+  // Advance the rolling schedule pointer past a completed (week, day) — forward only,
+  // so re-completing an old session via Edit can never rewind the program. Sessions
+  // dated before the current round's start belong to a previous round: their high
+  // week/day would pass the forward-only check and fast-forward a fresh round.
+  // A workout already completed today belongs to the round being archived —
+  // start the new round tomorrow so the session isn't counted in both rounds
+  const nextRoundStartDate = () => {
+    if (sessionLog[todayStr]?.status === "completed") {
+      const d = new Date(todayStr + "T12:00:00"); d.setDate(d.getDate() + 1);
+      return toLocalDateStr(d);
+    }
+    return todayStr;
+  };
+
+  const advanceSh90Position = (fromWeek, fromDay, sessionDate) => {
+    if (sessionDate && sessionDate < rounds.startDate) return;
+    let nextDay = fromDay + 1, nextWeek = fromWeek;
     if (nextDay > 6) { nextDay = 1; nextWeek++; }
-    if (nextWeek > 12) { nextWeek = 12; nextDay = 6; }
-    setNextWorkoutPos({ week: nextWeek, day: nextDay });
+    // Week 12 is a 2-day deload — terminal position is W12 D2
+    if (nextWeek > 12 || !WORKOUT_DATA[nextWeek]?.[nextDay]) { nextWeek = 12; nextDay = 2; }
+    const nextLinear = (nextWeek - 1) * 6 + nextDay;
+    const curLinear = (nextWorkoutPos.week - 1) * 6 + nextWorkoutPos.day;
+    if (nextLinear > curLinear) setNextWorkoutPos({ week: nextWeek, day: nextDay });
   };
 
   // Log a past workout (skips active, goes straight to completed)
   const logPastSession = () => {
-    var sess = { week: week, day: day, completedAt: selectedDate + "T12:00:00", status: "completed" };
+    var sess = { week: week, day: day, routine: routine, completedAt: selectedDate + "T12:00:00", status: "completed" };
     setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
     syncSession(selectedDate, sess);
+    // A backfilled workout counts: check the habit and roll the schedule forward
+    toggleHabit(3, true);
+    if (routine === "sh90") advanceSh90Position(week, day, selectedDate);
   };
 
   // Undo / re-open a completed session for editing
   const reopenSession = () => {
-    setSessionLog(prev => ({
-      ...prev,
-      [selectedDate]: { ...prev[selectedDate], status: "active", reopened: true }
-    }));
+    const upd = { ...sessionLog[selectedDate], status: "active", reopened: true };
+    setSessionLog(prev => ({ ...prev, [selectedDate]: upd }));
+    syncSession(selectedDate, upd);
   };
 
   // Elapsed timer for active sessions
@@ -1025,38 +1388,49 @@ function SuperhumanApp() {
     }
   }, [nextWorkoutPos]);
 
-  // Auto-navigate to the correct week/day when selecting a date
+  // Auto-navigate to the correct week/day when selecting a date (or switching routine)
   useEffect(() => {
     const session = sessionLog[selectedDate];
+    const sessionRoutine = session ? (session.routine || "sh90") : null;
 
-    if (selectedDate === todayStr) {
-      // Today: use nextWorkoutPos if no active/completed session, else use session
-      if (session && session.week && session.day) {
-        setWeek(session.week);
+    if (routine === "omar" || routine === "phat") {
+      // Weekday-anchored routines: the calendar day decides the workout
+      if (session && session.day && sessionRoutine === routine) {
         setDay(session.day);
       } else {
+        setDay(isoWeekday(selectedDate));
+      }
+      setExpandedEx(null);
+    } else if (routine === "sh90") {
+      if (selectedDate === todayStr) {
+        // Today: use nextWorkoutPos if no active/completed session, else use session
+        if (session && session.week && session.day && sessionRoutine === "sh90") {
+          setWeek(session.week);
+          setDay(session.day);
+        } else {
+          const next = getNextWorkoutPosition();
+          setWeek(next.week);
+          setDay(next.day);
+        }
+        setExpandedEx(null);
+      } else if (session && session.week && session.day && sessionRoutine === "sh90") {
+        // Past/future with session — show that session's workout
+        setWeek(session.week);
+        setDay(session.day);
+        setExpandedEx(null);
+      } else if (selectedDate > todayStr) {
+        // Future with no session — preview next workout
         const next = getNextWorkoutPosition();
         setWeek(next.week);
         setDay(next.day);
+        setExpandedEx(null);
       }
-      setExpandedEx(null);
-    } else if (session && session.week && session.day) {
-      // Past/future with session — show that session's workout
-      setWeek(session.week);
-      setDay(session.day);
-      setExpandedEx(null);
-    } else if (selectedDate > todayStr) {
-      // Future with no session — preview next workout
-      const next = getNextWorkoutPosition();
-      setWeek(next.week);
-      setDay(next.day);
-      setExpandedEx(null);
+      // Past date with no session: leave week/day as-is (banner shows "Rest Day")
     }
-    // Past date with no session: leave week/day as-is (banner shows "Rest Day")
     // Sync weight input to selected date
     const w = weightLog[selectedDate];
     setWeightInput(w ? String(w) : "");
-  }, [selectedDate]);
+  }, [selectedDate, routine]);
 
   // Build week view centered around selected date (Mon-Sun)
   const getWeekDays = (refDate) => {
@@ -1085,17 +1459,31 @@ function SuperhumanApp() {
   };
   const dateHasWeight = (ds) => !!weightLog[ds];
 
-  // Program day counter (days since Jan 21)
-  const programStart = new Date(2026, 0, 19);
-  const programDay = Math.floor((selectedDateObj - programStart) / (1000 * 60 * 60 * 24)) + 1;
+  // Program day counter — days into the CURRENT 90-day round
+  const roundStartObj = new Date(rounds.startDate + "T12:00:00");
+  const programDay = Math.floor((selectedDateObj - roundStartObj) / (1000 * 60 * 60 * 24)) + 1;
+  // Sessions completed in the current round (any routine)
+  const roundCompletedCount = Object.entries(sessionLog)
+    .filter(([date, s]) => s.status === "completed" && date >= rounds.startDate).length;
 
   const t = THEMES[theme];
-  const weekData = WORKOUT_DATA[week] || WORKOUT_DATA[5];
-  const dayData = weekData?.[day];
+  const weekData = routine === "sh90" ? (WORKOUT_DATA[week] || WORKOUT_DATA[5]) : null;
+  // A logged session always dictates what its date shows, even if the active
+  // routine has since changed — the exercise list must match the status banner
+  const _selSess = sessionLog[selectedDate];
+  const _selSessRoutine = _selSess ? (_selSess.routine || "sh90") : null;
+  const crossRoutineSession = !!_selSess && _selSessRoutine !== routine;
+  const dayData = crossRoutineSession
+    ? getRoutineDayData(_selSessRoutine, _selSess.week, _selSess.day)
+    : routine === "sh90" ? weekData?.[day] : getRoutineDayData(routine, week, day);
   const exercises = dayData?.exercises || [];
+  const isRestDay = routine !== "sh90" && routine !== "yoga" && exercises.length === 0;
   const programWeek = nextWorkoutPos.week;
   const phaseLabel = programWeek <= 4 ? "Phase 1" : programWeek <= 8 ? "Phase 2" : "Phase 3";
   const phaseWeeks = programWeek <= 4 ? "Wk 1-4" : programWeek <= 8 ? "Wk 5-8" : "Wk 9-12";
+  const headerSub = routine === "sh90"
+    ? `${phaseLabel} · ${phaseWeeks} · Round ${rounds.current}`
+    : `${ROUTINES[routine].name} · Round ${rounds.current}`;
 
   const getPrevWeekResult = (exName) => {
     const sorted = Object.entries(logData)
@@ -1105,7 +1493,8 @@ function SuperhumanApp() {
       const lastEntry = sorted[0][1];
       if (lastEntry.weight) return `${lastEntry.weight}×${lastEntry.reps || "?"}`;
     }
-    if (week <= 1) return null;
+    // Spreadsheet seed results only apply to the SH90 program
+    if (routine !== "sh90" || week <= 1) return null;
     const prev = WORKOUT_DATA[week - 1];
     if (!prev || !prev[day]) return null;
     const ex = prev[day].exercises.find(e => e.name === exName);
@@ -1136,8 +1525,9 @@ function SuperhumanApp() {
       const ds = toLocalDateStr(d);
       const dayLog = habitLog[ds];
       if (dayLog && dayLog[idx]) streak++;
-      else if (i > 0) break; // don't break on current day if not yet done
-      else if (i === 0 && !dayLog?.[idx]) { streak = 0; break; }
+      else if (i > 0) break;
+      // i === 0 and not yet done: skip today without breaking — the streak
+      // from yesterday holds until the day is actually over
       d.setDate(d.getDate() - 1);
     }
     return streak;
@@ -1151,7 +1541,9 @@ function SuperhumanApp() {
   });
 
   const totalCompletedToday = selectedHabits.filter(Boolean).length;
-  const todayRate = Math.round((totalCompletedToday / HABIT_LABELS.length) * 100);
+  const todayRate = Math.round(
+    (selectedHabits.reduce((s, v, i) => s + (v ? HABIT_WEIGHTS[i] : 0), 0) / HABIT_WEIGHT_TOTAL) * 100
+  );
 
   // Habit notes helpers
   const getNote = (idx) => habitNotes[selectedDate]?.[idx] || "";
@@ -1265,6 +1657,7 @@ function SuperhumanApp() {
       if (entries.length === 0) { toggleHabit(5, false); }
       return { ...prev, [selectedDate]: { entries } };
     });
+    deleteFromSupabase("food_entries", { entry_id: id });
   };
   const startEditingFood = (entry) => {
     setFoodEditing({ id: entry.id, category: entry.category || "Snack", cal: entry.cal, protein: entry.protein, carbs: entry.carbs, fat: entry.fat });
@@ -1279,6 +1672,8 @@ function SuperhumanApp() {
         cal: parseInt(foodEditing.cal) || 0, protein: parseInt(foodEditing.protein) || 0,
         carbs: parseInt(foodEditing.carbs) || 0, fat: parseInt(foodEditing.fat) || 0,
       } : e);
+      const edited = entries.find(e => e.id === foodEditing.id);
+      if (edited) syncFoodEntry(edited, selectedDate);
       return { ...prev, [selectedDate]: { entries } };
     });
     setFoodEditing(null);
@@ -1299,15 +1694,96 @@ function SuperhumanApp() {
     recognition.start();
   };
 
-  // Workout selection helpers
-  const WORKOUT_DAY_OPTIONS = [
-    { day: 1, label: "LEG A" },
-    { day: 2, label: "TOR A" },
-    { day: 3, label: "ARM A" },
-    { day: 4, label: "LEG B" },
-    { day: 5, label: "TOR B" },
-    { day: 6, label: "ARM B" },
-  ];
+  // ── AI Coach ──
+  const buildCoachContext = () => {
+    const recentSessions = Object.entries(sessionLog)
+      .filter(([_, s]) => s.status === "completed")
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, 7)
+      .map(([date, s]) => {
+        const sr = s.routine || "sh90";
+        const lbl = sr === "yoga" ? (s.label || "Yoga") : (getRoutineDayData(sr, s.week, s.day)?.label || `Day ${s.day}`);
+        return `${date}: ${lbl}${sr !== "sh90" ? ` (${ROUTINES[sr]?.name})` : ` (W${s.week}D${s.day})`}`;
+      });
+    const recentWeights = sortedWeights.slice(-14).map(e => `${e.date}: ${e.weight}`);
+    const habitSummary = HABIT_LABELS.map((l, i) => `${l}: ${habitRates[i]}% (streak ${habitStreaks[i]}d)`).join(", ");
+    const foodToday = getDayFoodTotals(todayStr);
+    const todayData = getRoutineDayData(routine, week, day);
+    return [
+      `You are the in-app AI coach for Superhuman90, a 90-day fitness and habit app. Be concise, direct, encouraging, and practical — like a knowledgeable training partner. Use short paragraphs or tight bullet lists. No markdown headers.`,
+      `User: ${profile.name || "athlete"}${profile.age ? `, age ${profile.age}` : ""}${profile.height ? `, ${profile.height}` : ""}${profile.goalWeight ? `, goal weight ${profile.goalWeight} lbs` : ""}.`,
+      profile.notes ? `User goals/notes: ${profile.notes}` : "",
+      `Current date: ${todayStr}. Round ${rounds.current} of the 90-day program, day ${programDay > 0 ? Math.min(programDay, 90) + (programDay > 90 ? "+ (round overdue)" : "") : "?"} of 90. ${rounds.history.length} prior round(s) completed.`,
+      `Active routine: ${ROUTINES[routine].name}. ${routine === "sh90" ? `Position: Week ${week}, Day ${day} (${todayData?.label || ""}), ${phaseLabel}.` : `Today's scheduled workout: ${todayData?.label || "n/a"}.`}`,
+      `Workouts completed this round: ${roundCompletedCount}.`,
+      `Recent workouts: ${recentSessions.join("; ") || "none yet"}.`,
+      `Weight log (last ${recentWeights.length}): ${recentWeights.join(", ") || "none"}. Current: ${currentWeight || "?"} lbs, start: ${startWeight || "?"} lbs.`,
+      `Habit rates: ${habitSummary}.`,
+      `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein (goal ${calorieGoal} cal).`,
+      `Home recovery equipment available: HBOT chamber, red light panel, Neuronic photobiomodulation helmet, hydrogen inhalation, PowerPlate, free weights.`,
+      `The user may ask about training, recovery, habits, nutrition, or motivation. If asked for medical advice beyond general fitness, recommend consulting a professional. Keep answers under 200 words unless asked for detail.`,
+    ].filter(Boolean).join("\n");
+  };
+
+  const sendCoachMessage = async (text) => {
+    const msg = (text || "").trim();
+    if (!msg || coachLoading) return;
+    if (!calorieApiKey) { setCoachError("Add your Gemini API key in Me → Food Tracker to enable the coach."); return; }
+    setCoachError("");
+    const history = [...coachChat, { role: "user", text: msg }];
+    setCoachChat(history);
+    setCoachInput("");
+    setCoachLoading(true);
+    try {
+      const contents = [
+        { role: "user", parts: [{ text: buildCoachContext() }] },
+        { role: "model", parts: [{ text: "Understood — I'm ready to coach." }] },
+        ...history.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] })),
+      ];
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } } }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error("API error " + res.status + ": " + errBody.slice(0, 160));
+      }
+      const result = await res.json();
+      let responseText = "";
+      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+        result.candidates[0].content.parts.forEach(function(p) { if (p.text && !p.thought) responseText += p.text; });
+      }
+      if (!responseText) throw new Error("Empty response — try again");
+      setCoachChat(prev => [...prev, { role: "model", text: responseText.trim() }]);
+    } catch (e) {
+      setCoachError(e.message || "Coach unavailable");
+      setCoachChat(prev => prev.filter((m, i) => !(i === prev.length - 1 && m.role === "user" && m.text === msg)));
+      setCoachInput(msg);
+    }
+    setCoachLoading(false);
+  };
+
+  // Workout selection helpers (quick-select in the Habits tab, follows active routine)
+  const WORKOUT_DAY_OPTIONS = routine === "sh90"
+    ? [
+        { day: 1, label: "LEG A" },
+        { day: 2, label: "TOR A" },
+        { day: 3, label: "ARM A" },
+        { day: 4, label: "LEG B" },
+        { day: 5, label: "TOR B" },
+        { day: 6, label: "ARM B" },
+      ]
+    : routine === "yoga"
+      ? [{ day: 1, label: "YOGA" }]
+      : [1, 2, 3, 4, 5, 6, 7]
+          .filter(d => (getRoutineDayData(routine, 1, d)?.exercises || []).length > 0)
+          .map(d => {
+            const dl = getRoutineDayData(routine, 1, d)?.label || "";
+            // Keep enough words to tell similar days apart (PHAT: LOWER POWER vs LOWER HYP)
+            const words = dl.split(" ").filter(w => w !== "·");
+            return { day: d, label: words.slice(0, 2).join(" ").slice(0, 11), weekday: ["", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][d] };
+          });
   const getWorkoutSelection = () => workoutSelection[selectedDate] || null;
   const selectWorkout = (dayOption) => {
     setWorkoutSelection(prev => ({
@@ -1316,6 +1792,30 @@ function SuperhumanApp() {
     }));
     toggleHabit(3, true);
     syncWorkoutSelection(selectedDate, dayOption);
+    // Keep the Workout tab in agreement: record (or retarget) a quick-logged session.
+    // Never touch a session created in the Workout tab itself.
+    const existing = sessionLog[selectedDate];
+    if (routine !== "yoga" && (!existing || existing.quickLogged)) {
+      const sess = {
+        week: routine === "sh90" ? nextWorkoutPos.week : 0,
+        day: dayOption.day, routine: routine,
+        completedAt: selectedDate + "T12:00:00", status: "completed", quickLogged: true,
+      };
+      setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
+      syncSession(selectedDate, sess);
+      // Only roll the schedule forward when the logged type IS the scheduled one —
+      // logging ARM B while the pointer waits at TOR A must not skip workouts
+      if (routine === "sh90" && dayOption.day === nextWorkoutPos.day) {
+        advanceSh90Position(nextWorkoutPos.week, nextWorkoutPos.day, selectedDate);
+      }
+    }
+  };
+  // Remove a habit-tab quick-logged session (used by uncheck / rest-day undo)
+  const removeQuickLoggedSession = () => {
+    if (sessionLog[selectedDate]?.quickLogged) {
+      setSessionLog(prev => { const n = { ...prev }; delete n[selectedDate]; return n; });
+      deleteFromSupabase("sessions", { date: selectedDate });
+    }
   };
 
   // ── Weight Logging Helpers ──
@@ -1359,6 +1859,8 @@ function SuperhumanApp() {
       syncWeight(selectedDate, v);
     } else if (weightInput === "") {
       setWeightLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+      toggleHabit(4, false);
+      deleteFromSupabase("weight_log", { date: selectedDate });
     }
   };
   
@@ -1376,7 +1878,11 @@ function SuperhumanApp() {
   const last7Weights = sortedWeights.slice(-7);
 
   // Resolve swap with cross-week fallback (same exercise on same day carries across weeks)
-  const resolveSwap = (w, d, exName) => {
+  const resolveSwap = (w, d, exName, rk = routine) => {
+    if (rk !== "sh90") {
+      // Weekday routines: swaps are keyed by routine, not week
+      return swappedExercises[`${rk}-${d}-${exName}`] || exName;
+    }
     const key = `${w}-${d}-${exName}`;
     if (swappedExercises[key]) return swappedExercises[key];
     for (let wk = w - 1; wk >= 1; wk--) {
@@ -1390,8 +1896,8 @@ function SuperhumanApp() {
     return exName;
   };
 
-  const resolveDisplay = (w, d, exName) => {
-    const swapped = resolveSwap(w, d, exName);
+  const resolveDisplay = (w, d, exName, rk = routine) => {
+    const swapped = resolveSwap(w, d, exName, rk);
     if (swapped !== exName) return swapped; // manual swap takes priority
     if (workoutMode === "home") {
       const alts = ALTERNATIVES[exName] || [];
@@ -1405,13 +1911,15 @@ function SuperhumanApp() {
     }
     return exName;
   };
-  const displayName = (exName) => resolveDisplay(week, day, exName);
+  const displayName = (exName) => crossRoutineSession
+    ? resolveDisplay(_selSess.week, _selSess.day, exName, _selSessRoutine)
+    : resolveDisplay(week, day, exName);
 
   const swapExercise = (originalName, newName) => {
-    const key = `${week}-${day}-${originalName}`;
+    const key = routine === "sh90" ? `${week}-${day}-${originalName}` : `${routine}-${day}-${originalName}`;
     setSwappedExercises(prev => ({ ...prev, [key]: newName }));
     setShowAlts(null);
-    syncExerciseSwap(week, day, originalName, newName);
+    if (routine === "sh90") syncExerciseSwap(week, day, originalName, newName);
   };
 
   return (
@@ -1432,7 +1940,7 @@ function SuperhumanApp() {
               SUPERHUMAN 90
             </div>
             <div style={{ fontSize: fs(13), color: t.textDim, marginTop: 2 }}>
-              {phaseLabel} · {phaseWeeks}
+              {headerSub}
             </div>
           </div>
           {profile.name && (
@@ -1566,17 +2074,20 @@ function SuperhumanApp() {
 
             {/* Session Status Banner */}
             {(() => {
+              const sessRoutine = selectedSession ? (selectedSession.routine || "sh90") : null;
               // Get the workout label for the session
-              const sessionWorkoutLabel = selectedSession?.week && selectedSession?.day
-                ? WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.label
-                : null;
+              const sessionWorkoutLabel = sessRoutine === "yoga"
+                ? (selectedSession.label || "Yoga Session")
+                : selectedSession?.day
+                  ? getRoutineDayData(sessRoutine, selectedSession.week, selectedSession.day)?.label
+                  : null;
 
               // CASE 1: Completed session
               if (selectedSession?.status === "completed") {
-                const compExercises = WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.exercises || [];
+                const compExercises = sessRoutine === "yoga" ? [] : (getRoutineDayData(sessRoutine, selectedSession.week, selectedSession.day)?.exercises || []);
                 let compTotal = compExercises.length, compDone = 0;
                 compExercises.forEach(ex => {
-                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name);
+                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name, sessRoutine);
                   let allSetsDone = ex.sets > 0;
                   for (let si = 0; si < ex.sets; si++) {
                     if (!logData[`${selectedDate}-${dn}-${si}`]?.done) { allSetsDone = false; break; }
@@ -1617,47 +2128,55 @@ function SuperhumanApp() {
                   }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ fontSize: fs(18) }}>✅</span>
+                        <span style={{ fontSize: fs(18) }}>{sessRoutine === "yoga" ? "🧘" : "✅"}</span>
                         <div>
                           <div style={{ fontSize: fs(13), fontWeight: 600, color: t.success }}>
-                            {sessionWorkoutLabel || "Workout"} — {compPct}%
+                            {sessionWorkoutLabel || "Workout"}{sessRoutine === "yoga" ? " — Done" : ` — ${compPct}%`}
                             {durationStr && <span style={{ fontWeight: 500, opacity: 0.85 }}> · {durationStr}</span>}
                           </div>
                           <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
-                            W{selectedSession.week} D{selectedSession.day} · {compDone}/{compTotal} exercises
-                            {avgStr && ` · avg ${avgStr}`}
+                            {sessRoutine === "yoga"
+                              ? (selectedSession.channel || "YouTube session")
+                              : <>{sessRoutine === "sh90" ? `W${selectedSession.week} D${selectedSession.day}` : ROUTINES[sessRoutine].name} · {compDone}/{compTotal} exercises{avgStr && ` · avg ${avgStr}`}</>}
                           </div>
                         </div>
                       </div>
-                      <button onClick={reopenSession}
+                      <button onClick={() => {
+                          if (sessRoutine === "yoga") {
+                            setSessionLog(prev => { const n = { ...prev }; delete n[selectedDate]; return n; });
+                            deleteFromSupabase("sessions", { date: selectedDate });
+                          } else { reopenSession(); }
+                        }}
                         style={{
                           padding: "5px 10px", borderRadius: 6, border: `1px solid ${t.border}`,
                           background: "transparent", color: t.textDim, fontSize: fs(11),
                           cursor: "pointer", fontFamily: "'DM Mono', monospace",
                         }}>
-                        Edit
+                        {sessRoutine === "yoga" ? "Remove" : "Edit"}
                       </button>
                     </div>
                     {/* Progress bar */}
-                    <div style={{
-                      marginTop: 8, height: 4, borderRadius: 2,
-                      background: t.border, overflow: "hidden",
-                    }}>
+                    {sessRoutine !== "yoga" && (
                       <div style={{
-                        height: "100%", borderRadius: 2,
-                        width: `${compPct}%`, background: t.success,
-                      }} />
-                    </div>
+                        marginTop: 8, height: 4, borderRadius: 2,
+                        background: t.border, overflow: "hidden",
+                      }}>
+                        <div style={{
+                          height: "100%", borderRadius: 2,
+                          width: `${compPct}%`, background: t.success,
+                        }} />
+                      </div>
+                    )}
                   </div>
                 );
               }
               // CASE 2: Active session (in progress)
               if (selectedSession?.status === "active") {
                 // Calculate workout completion %
-                const sessionExercises = WORKOUT_DATA[selectedSession.week]?.[selectedSession.day]?.exercises || [];
+                const sessionExercises = getRoutineDayData(sessRoutine, selectedSession.week, selectedSession.day)?.exercises || [];
                 let totalEx = sessionExercises.length, doneEx = 0;
                 sessionExercises.forEach(ex => {
-                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name);
+                  const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name, sessRoutine);
                   let allSetsDone = ex.sets > 0;
                   for (let si = 0; si < ex.sets; si++) {
                     if (!logData[`${selectedDate}-${dn}-${si}`]?.done) { allSetsDone = false; break; }
@@ -1683,7 +2202,7 @@ function SuperhumanApp() {
                             {sessionWorkoutLabel || "Workout"} — {pct}%
                           </div>
                           <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
-                            W{selectedSession.week} D{selectedSession.day} · {doneEx}/{totalEx} exercises
+                            {sessRoutine === "sh90" ? `W${selectedSession.week} D${selectedSession.day}` : ROUTINES[sessRoutine]?.name} · {doneEx}/{totalEx} exercises
                             {elapsed && ` · ${elapsed}`}
                           </div>
                         </div>
@@ -1713,11 +2232,13 @@ function SuperhumanApp() {
               }
               // CASE 3: No session — Today → Start, Past → Rest Day, Future → Preview
               const isFutureDate = selectedDate > todayStr;
+              if (routine === "yoga") return null; // yoga library below has its own controls
               const nextPos = getNextWorkoutPosition();
-              const completedCount = Object.values(sessionLog).filter(s => s.status === "completed").length;
+              const sh90RoundCount = Object.entries(sessionLog)
+                .filter(([date, s]) => s.status === "completed" && (s.routine || "sh90") === "sh90" && date >= rounds.startDate).length;
 
-              // Program complete
-              if (completedCount >= 72 && !isFutureDate && !isPastDate) {
+              // Program complete (SH90, current round) — 68 defined workouts (11 weeks × 6 + 2-day deload)
+              if (routine === "sh90" && sh90RoundCount >= 68 && !isFutureDate && !isPastDate) {
                 return (
                   <div style={{
                     padding: "20px 14px", borderRadius: 14, marginBottom: 14,
@@ -1725,8 +2246,38 @@ function SuperhumanApp() {
                     textAlign: "center",
                   }}>
                     <div style={{ fontSize: fs(28), marginBottom: 6 }}>🏆</div>
-                    <div style={{ fontSize: fs(16), fontWeight: 700, color: t.success }}>Program Complete!</div>
-                    <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>All 72 workouts finished. You did it.</div>
+                    <div style={{ fontSize: fs(16), fontWeight: 700, color: t.success }}>Round {rounds.current} Complete!</div>
+                    <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>All {sh90RoundCount} workouts finished. You did it.</div>
+                    <button onClick={() => {
+                        if (!confirm(`Archive Round ${rounds.current} and start Round ${rounds.current + 1} at Week 1, Day 1?`)) return;
+                        setRounds(prev => ({
+                          current: prev.current + 1, startDate: nextRoundStartDate(),
+                          history: [...prev.history, { round: prev.current, startDate: prev.startDate, endDate: todayStr, workoutsCompleted: roundCompletedCount }],
+                        }));
+                        setNextWorkoutPos({ week: 1, day: 1 });
+                      }}
+                      style={{
+                        marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "none",
+                        background: t.gradient, color: "#fff", fontSize: fs(13), fontWeight: 600,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>
+                      Start Round {rounds.current + 1} →
+                    </button>
+                  </div>
+                );
+              }
+
+              // Scheduled rest day (weekday routines)
+              if (isRestDay && !isPastDate) {
+                return (
+                  <div style={{
+                    padding: "18px 14px", borderRadius: 14, marginBottom: 14,
+                    background: t.card, border: `1px solid ${t.border}`, textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: fs(24), marginBottom: 4 }}>😴</div>
+                    <div style={{ fontSize: fs(15), fontWeight: 600 }}>{dayData?.label === "REST" ? "Scheduled Rest Day" : dayData?.label}</div>
+                    {dayData?.desc && <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 4, lineHeight: 1.5 }}>{dayData.desc}</div>}
+                    <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 6 }}>Want to train anyway? Pick a day below.</div>
                   </div>
                 );
               }
@@ -1756,7 +2307,7 @@ function SuperhumanApp() {
 
               // Today or future — check if there's already logged exercise data
               let preDone = 0;
-              const preExercises = !isFutureDate ? (WORKOUT_DATA[week]?.[day]?.exercises || []) : [];
+              const preExercises = !isFutureDate ? (dayData?.exercises || []) : [];
               const preTotal = preExercises.length;
               if (!isFutureDate) {
                 preExercises.forEach(ex => {
@@ -1784,10 +2335,10 @@ function SuperhumanApp() {
                       borderColor: hasProgress ? t.success + "40" : t.accent + "40",
                     }}>
                     {isFutureDate
-                      ? `Upcoming — W${week} D${day} (${dayData?.label})`
+                      ? (routine === "sh90" ? `Upcoming — W${week} D${day} (${dayData?.label})` : `Upcoming — ${dayData?.label || "Rest"}`)
                       : hasProgress
                         ? `▶ Resume Workout — ${prePct}% (${preDone}/${preTotal})`
-                        : `▶ Start Workout — W${week} D${day} (${dayData?.label})`
+                        : (routine === "sh90" ? `▶ Start Workout — W${week} D${day} (${dayData?.label})` : `▶ Start Workout — ${dayData?.label}`)
                     }
                   </button>
                   {hasProgress && !isFutureDate && (
@@ -1804,7 +2355,8 @@ function SuperhumanApp() {
                 </div>
               );
             })()}
-            {/* Week & Day Selector */}
+            {/* Week & Day Selector (SH90 only) */}
+            {routine === "sh90" && !crossRoutineSession && (
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setShowWeekPicker(!showWeekPicker)}
                 style={{
@@ -1817,8 +2369,9 @@ function SuperhumanApp() {
                 <span style={{ fontSize: fs(10), color: t.textDim }}>▼</span>
               </button>
             </div>
+            )}
 
-            {showWeekPicker && (
+            {routine === "sh90" && !crossRoutineSession && showWeekPicker && (
               <div style={{
                 background: t.card, border: `1px solid ${t.border}`, borderRadius: 14,
                 padding: 10, marginBottom: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6,
@@ -1826,11 +2379,16 @@ function SuperhumanApp() {
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(w => (
                   <button key={w} onClick={() => {
                       setWeek(w); setShowWeekPicker(false);
-                      if (selectedDate === todayStr) {
+                      // Browsing must not corrupt records: only move the schedule pointer
+                      // when picking today's not-yet-started workout, and only rewrite a
+                      // session that is still ACTIVE (never a completed one).
+                      if (selectedDate === todayStr && !selectedSession) {
                         setNextWorkoutPos({ week: w, day });
                       }
-                      if (selectedSession) {
-                        setSessionLog(prev => ({ ...prev, [selectedDate]: { ...prev[selectedDate], week: w } }));
+                      if (selectedSession?.status === "active" && (selectedSession.routine || "sh90") === "sh90") {
+                        const upd = { ...selectedSession, week: w };
+                        setSessionLog(prev => ({ ...prev, [selectedDate]: upd }));
+                        syncSession(selectedDate, upd);
                       }
                     }}
                     style={{
@@ -1845,19 +2403,33 @@ function SuperhumanApp() {
             )}
 
             {/* Day Pills */}
+            {routine !== "yoga" && !crossRoutineSession && (
             <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto" }}>
-              {[1, 2, 3, 4, 5, 6].map(d => {
-                const dl = weekData?.[d]?.label || "";
-                const short = dl.replace("LEGS", "LEG").replace("TORSO", "TOR").replace("ARMS", "ARM").replace(" (DELOAD)", "");
+              {(routine === "sh90" ? [1, 2, 3, 4, 5, 6].filter(d => weekData?.[d]) : [1, 2, 3, 4, 5, 6, 7]).map(d => {
+                const WD = ["", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+                let pillText;
+                if (routine === "sh90") {
+                  const dl = weekData?.[d]?.label || "";
+                  const short = dl.replace("LEGS", "LEG").replace("TORSO", "TOR").replace("ARMS", "ARM").replace(" (DELOAD)", "");
+                  pillText = `D${d} ${short}`;
+                } else {
+                  const dl = getRoutineDayData(routine, week, d)?.label || "";
+                  const short = dl.length > 10 ? dl.split(" ")[0].replace(" ·", "") : dl;
+                  pillText = `${WD[d]} ${short === "REST" ? "😴" : short}`;
+                }
                 return (
                   <button key={d} onClick={() => {
                       setDay(d); setExpandedEx(null);
-                      if (selectedDate === todayStr) {
+                      // Browsing must not corrupt records: only move the schedule pointer
+                      // when picking today's not-yet-started workout, and only rewrite a
+                      // session that is still ACTIVE (never a completed one).
+                      if (routine === "sh90" && selectedDate === todayStr && !selectedSession) {
                         setNextWorkoutPos({ week, day: d });
                       }
-                      // Update session if one exists (active or completed)
-                      if (selectedSession) {
-                        setSessionLog(prev => ({ ...prev, [selectedDate]: { ...prev[selectedDate], day: d } }));
+                      if (selectedSession?.status === "active" && (selectedSession.routine || "sh90") === routine) {
+                        const upd = { ...selectedSession, day: d };
+                        setSessionLog(prev => ({ ...prev, [selectedDate]: upd }));
+                        syncSession(selectedDate, upd);
                       }
                     }}
                     style={{
@@ -1868,17 +2440,107 @@ function SuperhumanApp() {
                       letterSpacing: 0.5, flexShrink: 0,
                     }}
                   >
-                    D{d} {short}
+                    {pillText}
                   </button>
                 );
               })}
             </div>
+            )}
 
             {/* Day Header */}
+            {(routine !== "yoga" || crossRoutineSession) && dayData && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: fs(20), fontWeight: 700 }}>Day {day}</div>
+              <div style={{ fontSize: fs(20), fontWeight: 700 }}>
+                {crossRoutineSession
+                  ? (_selSessRoutine === "sh90" ? `Day ${_selSess.day}` : dayData?.label)
+                  : routine === "sh90" ? `Day ${day}` : ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][day]}
+              </div>
               <div style={{ fontSize: fs(14), color: t.accent, fontWeight: 500 }}>{dayData?.label}</div>
+              {crossRoutineSession && (
+                <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 3 }}>
+                  Logged with {ROUTINES[_selSessRoutine]?.name} — switch routines in Me to edit its schedule
+                </div>
+              )}
+              {dayData?.desc && (
+                <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 3, lineHeight: 1.5 }}>{dayData.desc}</div>
+              )}
             </div>
+            )}
+
+            {/* ── Yoga Library ── */}
+            {routine === "yoga" && !selectedSession && (() => {
+              const CATS = [
+                { key: "morning", label: "🌅 Morning" },
+                { key: "flow", label: "🌊 Full Body Flow" },
+                { key: "power", label: "🔥 Power & Strength" },
+                { key: "stretch", label: "🧵 Deep Stretch" },
+                { key: "evening", label: "🌙 Evening Wind-Down" },
+                { key: "beginner", label: "🌱 Foundations" },
+              ];
+              const isFutureDate = selectedDate > todayStr;
+              return (
+                <div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: fs(20), fontWeight: 700 }}>Yoga Session</div>
+                    <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 2 }}>
+                      Pick a video, follow along on YouTube, then mark it done.
+                    </div>
+                  </div>
+                  {CATS.map(cat => {
+                    const vids = YOGA_VIDEOS.filter(v => v.category === cat.key);
+                    if (vids.length === 0) return null;
+                    return (
+                      <div key={cat.key} style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>
+                          {cat.label}
+                        </div>
+                        {vids.map(v => (
+                          <div key={v.id} style={{
+                            background: t.card, borderRadius: 14, marginBottom: 8, overflow: "hidden",
+                            border: `1px solid ${t.border}`, display: "flex", alignItems: "stretch",
+                          }}>
+                            <a href={`https://www.youtube.com/watch?v=${v.id}`} target="_blank" rel="noopener noreferrer"
+                              style={{ flexShrink: 0, width: 110, display: "block", position: "relative", background: "#000" }}>
+                              <img src={`https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`} alt={v.title}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: 0.9 }} />
+                              <span style={{
+                                position: "absolute", inset: 0, display: "flex", alignItems: "center",
+                                justifyContent: "center", fontSize: 22, textShadow: "0 1px 6px rgba(0,0,0,0.7)",
+                              }}>▶️</span>
+                            </a>
+                            <div style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}>
+                              <div style={{ fontSize: fs(13), fontWeight: 600, lineHeight: 1.3 }}>{v.title}</div>
+                              <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+                                {v.channel} · {v.duration}
+                              </div>
+                              {!isFutureDate && (
+                                <button onClick={() => {
+                                    const sess = {
+                                      routine: "yoga", label: v.title, channel: v.channel, videoId: v.id,
+                                      status: "completed", completedAt: new Date().toISOString(),
+                                    };
+                                    setSessionLog(prev => ({ ...prev, [selectedDate]: sess }));
+                                    syncSession(selectedDate, sess);
+                                    toggleHabit(3, true);
+                                  }}
+                                  style={{
+                                    marginTop: 6, padding: "5px 12px", borderRadius: 8,
+                                    border: `1px solid ${t.success}50`, background: "transparent",
+                                    color: t.success, fontSize: fs(11), fontWeight: 600,
+                                    cursor: "pointer", fontFamily: "inherit",
+                                  }}>
+                                  ✓ Mark Done
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Exercise List */}
             {exercises.map((ex, idx) => {
@@ -2018,6 +2680,7 @@ function SuperhumanApp() {
                                       });
                                       if (tEx > 0 && (dEx / tEx) >= 0.5) toggleHabit(3, true);
                                     }
+                                    queueSetSync(selectedDate, currentDisplay, si, next[logKey]);
                                     return next;
                                   });
                                 }}
@@ -2048,6 +2711,7 @@ function SuperhumanApp() {
                                       });
                                       if (tEx > 0 && (dEx / tEx) >= 0.5) toggleHabit(3, true);
                                     }
+                                    queueSetSync(selectedDate, currentDisplay, si, next[logKey]);
                                     return next;
                                   });
                                 }}
@@ -2077,6 +2741,7 @@ function SuperhumanApp() {
                                       });
                                       if (totalEx > 0 && (doneEx / totalEx) >= 0.5) toggleHabit(3, true);
                                     }
+                                    queueSetSync(selectedDate, currentDisplay, si, next[logKey]);
                                     return next;
                                   });
                                 }}
@@ -2096,7 +2761,7 @@ function SuperhumanApp() {
                       {/* Progress Mini Chart */}
                       {history.length >= 2 && (
                         <div style={{ marginTop: 14 }}>
-                          <MiniChart data={history.map(h => h.result)} color={t.accent} label={isBW ? (isTimedEx ? "Duration Progress" : "Rep Progress") : "Weight Progress (lbs)"} />
+                          <MiniChart data={history.map(h => parseFloat(h.result))} color={t.accent} label={isBW ? (isTimedEx ? "Duration Progress" : "Rep Progress") : "Weight Progress (lbs)"} />
                         </div>
                       )}
 
@@ -2148,7 +2813,12 @@ function SuperhumanApp() {
                           </div>
                           {isSwapped && (
                             <button
-                              onClick={() => { const key = `${week}-${day}-${ex.name}`; setSwappedExercises(prev => { const n = { ...prev }; delete n[key]; return n; }); setShowAlts(null); }}
+                              onClick={() => {
+                                const key = routine === "sh90" ? `${week}-${day}-${ex.name}` : `${routine}-${day}-${ex.name}`;
+                                setSwappedExercises(prev => { const n = { ...prev }; delete n[key]; return n; });
+                                setShowAlts(null);
+                                if (routine === "sh90") deleteFromSupabase("exercise_swaps", { week: week, day: day, original_exercise: ex.name });
+                              }}
                               style={{
                                 marginTop: 6, width: "100%", padding: "8px", borderRadius: 8,
                                 border: "none", background: t.warning + "20", color: t.warning,
@@ -2213,7 +2883,7 @@ function SuperhumanApp() {
                   {weightChange !== null && (
                     <div style={{
                       fontSize: fs(13), fontWeight: 600, marginTop: 4,
-                      color: weightChange > 0 ? t.success : weightChange < 0 ? t.danger : t.textDim,
+                      color: weightChange < 0 ? t.success : weightChange > 0 ? t.danger : t.textDim,
                       fontFamily: "'DM Mono', monospace",
                     }}>
                       {weightChange > 0 ? "+" : ""}{weightChange.toFixed(1)} from previous
@@ -2355,7 +3025,7 @@ function SuperhumanApp() {
                 }} />
               </div>
               <div style={{ fontSize: fs(11), color: todayRate >= 80 ? t.success : t.warning, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>
-                {todayRate >= 80 ? "TARGET HIT" : `${Math.ceil(HABIT_LABELS.length * 0.8) - totalCompletedToday} more for 80%`}
+                {todayRate >= 80 ? "TARGET HIT" : "AIM FOR 80%+"}
               </div>
             </div>
 
@@ -2390,9 +3060,13 @@ function SuperhumanApp() {
                         toggleHabit(idx, !checked);
                         if (isWorkout && checked) {
                           setWorkoutSelection(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+                          deleteFromSupabase("workout_selection", { date: selectedDate });
+                          removeQuickLoggedSession();
                         }
                         if (isSteps && checked) {
                           setStepLog(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
+                          cancelStepSync(selectedDate);
+                          deleteFromSupabase("step_log", { date: selectedDate });
                         }
                       }}
                       style={{
@@ -2421,7 +3095,7 @@ function SuperhumanApp() {
                         {isSteps && currentSteps && (
                           <span style={{
                             fontSize: fs(12), fontWeight: 600, marginLeft: 6,
-                            color: currentSteps >= 10000 ? t.success : t.warning,
+                            color: currentSteps >= STEP_GOAL ? t.success : t.warning,
                           }}>
                             — {currentSteps.toLocaleString()}
                           </span>
@@ -2429,6 +3103,7 @@ function SuperhumanApp() {
                       </div>
                       <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
                         {habitStreaks[idx]}d streak · {habitRates[idx]}% rate
+                        {HABIT_WEIGHTS[idx] < 1 && <span> · counts ½</span>}
                         {note && !isExpanded && <span style={{ color: t.accent }}> · 📝</span>}
                       </div>
                     </div>
@@ -2495,7 +3170,7 @@ function SuperhumanApp() {
                                     fontSize: fs(12), fontWeight: isActive ? 700 : 500,
                                     textAlign: "center",
                                   }}>
-                                  <div style={{ fontSize: fs(14), fontWeight: 700 }}>D{opt.day}</div>
+                                  <div style={{ fontSize: fs(14), fontWeight: 700 }}>{opt.weekday || `D${opt.day}`}</div>
                                   <div style={{ fontSize: fs(10), marginTop: 2, color: isActive ? t.accent : t.textDim }}>{opt.label}</div>
                                 </button>
                               );
@@ -2506,6 +3181,8 @@ function SuperhumanApp() {
                             onClick={() => {
                               setWorkoutSelection(prev => { const n = {...prev}; delete n[selectedDate]; return n; });
                               toggleHabit(3, false);
+                              deleteFromSupabase("workout_selection", { date: selectedDate });
+                              removeQuickLoggedSession();
                             }}
                             style={{
                               width: "100%", marginTop: 6, padding: "8px", borderRadius: 8,
@@ -2517,7 +3194,7 @@ function SuperhumanApp() {
                         </div>
                       )}
 
-                      {/* Step counter (only for 10K Steps habit) */}
+                      {/* Step counter (only for the Steps habit) */}
                       {isSteps && (
                         <div style={{ marginBottom: 10 }}>
                           <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
@@ -2529,7 +3206,8 @@ function SuperhumanApp() {
                               const cur = currentSteps || 0;
                               const newVal = Math.max(0, cur - 1000);
                               setStepLog(prev => ({ ...prev, [selectedDate]: newVal }));
-                              toggleHabit(2, newVal >= 10000);
+                              toggleHabit(2, newVal >= STEP_GOAL);
+                              queueStepSync(selectedDate, newVal);
                             }} style={{
                               width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
                               background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
@@ -2543,11 +3221,12 @@ function SuperhumanApp() {
                               onChange={e => {
                                 const v = parseInt(e.target.value) || 0;
                                 setStepLog(prev => ({ ...prev, [selectedDate]: v }));
-                                toggleHabit(2, v >= 10000);
+                                toggleHabit(2, v >= STEP_GOAL);
+                                queueStepSync(selectedDate, v);
                               }}
                               style={{
                                 flex: 1, padding: "10px 8px", borderRadius: 10, textAlign: "center",
-                                border: `2px solid ${currentSteps >= 10000 ? t.success + "60" : t.border}`,
+                                border: `2px solid ${currentSteps >= STEP_GOAL ? t.success + "60" : t.border}`,
                                 background: t.cardAlt, color: t.text, fontSize: fs(20), fontWeight: 700,
                                 fontFamily: "'DM Mono', monospace", outline: "none",
                                 boxSizing: "border-box",
@@ -2558,7 +3237,8 @@ function SuperhumanApp() {
                               const cur = currentSteps || 0;
                               const newVal = cur + 1000;
                               setStepLog(prev => ({ ...prev, [selectedDate]: newVal }));
-                              toggleHabit(2, newVal >= 10000);
+                              toggleHabit(2, newVal >= STEP_GOAL);
+                              queueStepSync(selectedDate, newVal);
                             }} style={{
                               width: 40, height: 44, borderRadius: 10, border: `1px solid ${t.border}`,
                               background: t.cardAlt, color: t.text, fontSize: fs(14), fontWeight: 600,
@@ -2572,18 +3252,18 @@ function SuperhumanApp() {
                             }}>
                               <div style={{
                                 height: "100%", borderRadius: 3,
-                                background: currentSteps >= 10000 ? t.success : t.accent,
-                                width: `${Math.min(100, ((currentSteps || 0) / 10000) * 100)}%`,
+                                background: currentSteps >= STEP_GOAL ? t.success : t.accent,
+                                width: `${Math.min(100, ((currentSteps || 0) / STEP_GOAL) * 100)}%`,
                                 transition: "width 0.3s ease",
                               }} />
                             </div>
                             <div style={{
                               display: "flex", justifyContent: "space-between", marginTop: 4,
                               fontSize: fs(10), fontFamily: "'DM Mono', monospace",
-                              color: currentSteps >= 10000 ? t.success : t.textDim,
+                              color: currentSteps >= STEP_GOAL ? t.success : t.textDim,
                             }}>
-                              <span>{currentSteps >= 10000 ? "✓ Goal reached!" : `${(10000 - (currentSteps || 0)).toLocaleString()} to go`}</span>
-                              <span>10,000</span>
+                              <span>{currentSteps >= STEP_GOAL ? "✓ Goal reached!" : `${(STEP_GOAL - (currentSteps || 0)).toLocaleString()} to go`}</span>
+                              <span>{STEP_GOAL.toLocaleString()}</span>
                             </div>
                           </div>
                         </div>
@@ -2842,6 +3522,208 @@ function SuperhumanApp() {
                 </div>
               );
             })}
+
+            {/* ── Recovery Stack (home equipment wellness) ── */}
+            {(() => {
+              const stackIds = WELLNESS_STACK[isoWeekday(selectedDate)] || [];
+              const dayWellness = wellnessLog[selectedDate] || {};
+              const doneCount = stackIds.filter(id => dayWellness[id]).length;
+              const toggleWellness = (id) => {
+                setWellnessLog(prev => {
+                  const cur = { ...(prev[selectedDate] || {}) };
+                  if (cur[id]) delete cur[id]; else cur[id] = true;
+                  return { ...prev, [selectedDate]: cur };
+                });
+              };
+              return (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 10, fontFamily: "'DM Mono', monospace", letterSpacing: 1.5, textTransform: "uppercase" }}>
+                    RECOVERY STACK · {doneCount}/{stackIds.length}
+                  </div>
+                  <div style={{
+                    background: t.card, borderRadius: 16, padding: 16, marginBottom: 6,
+                    border: `1px solid ${doneCount === stackIds.length && stackIds.length > 0 ? t.success + "40" : t.border}`,
+                  }}>
+                    <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+                      Today's suggested protocols from your home equipment. Tap to check off.
+                    </div>
+                    {stackIds.map(id => {
+                      const item = WELLNESS_ITEMS[id];
+                      const done = !!dayWellness[id];
+                      return (
+                        <div key={id} onClick={() => toggleWellness(id)} style={{
+                          display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+                          borderRadius: 10, marginBottom: 6, cursor: "pointer",
+                          background: done ? t.success + "12" : t.cardAlt,
+                          border: `1px solid ${done ? t.success + "40" : "transparent"}`,
+                          transition: "all 0.15s",
+                        }}>
+                          <div style={{
+                            width: 26, height: 26, borderRadius: 7, display: "flex", flexShrink: 0,
+                            alignItems: "center", justifyContent: "center", fontSize: fs(14),
+                            background: done ? t.success : t.card,
+                          }}>
+                            {done ? "✓" : item.icon}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: fs(13), fontWeight: 600, textDecoration: done ? "line-through" : "none", opacity: done ? 0.6 : 1 }}>
+                              {item.name} <span style={{ fontWeight: 400, color: t.textDim }}>· {item.detail}</span>
+                            </div>
+                            <div style={{ fontSize: fs(10), color: t.textDim }}>{item.tip}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Full equipment list for off-schedule use */}
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ fontSize: fs(11), color: t.textDim, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                        All equipment
+                      </summary>
+                      <div style={{ marginTop: 8 }}>
+                        {Object.entries(WELLNESS_ITEMS).filter(([id]) => !stackIds.includes(id)).map(([id, item]) => {
+                          const done = !!dayWellness[id];
+                          return (
+                            <div key={id} onClick={() => toggleWellness(id)} style={{
+                              display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                              borderRadius: 10, marginBottom: 4, cursor: "pointer",
+                              background: done ? t.success + "12" : "transparent",
+                            }}>
+                              <span style={{ fontSize: fs(14) }}>{done ? "✓" : item.icon}</span>
+                              <span style={{ fontSize: fs(12), color: done ? t.success : t.textDim }}>{item.name} · {item.detail}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ═══ COACH TAB ═══ */}
+        {tab === "coach" && (
+          <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", minHeight: "100%" }}>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: fs(20), fontWeight: 700 }}>AI Coach</div>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 2 }}>
+                Knows your routine, round, lifts, weight trend, habits & recovery gear.
+              </div>
+            </div>
+
+            {!calorieApiKey && (
+              <div style={{
+                padding: "12px 14px", borderRadius: 12, marginBottom: 12,
+                background: t.warning + "15", border: `1px solid ${t.warning}40`,
+                fontSize: fs(12), color: t.text, lineHeight: 1.5,
+              }}>
+                ⚠️ Add your Gemini API key in <b>Me → Food Tracker</b> to enable the coach (same key as AI food tracking).
+              </div>
+            )}
+
+            {/* Chat history */}
+            <div style={{ flex: 1 }}>
+              {coachChat.length === 0 && (
+                <div style={{
+                  background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+                  border: `1px solid ${t.border}`, textAlign: "center",
+                }}>
+                  <div style={{ fontSize: fs(28), marginBottom: 6 }}>🤖</div>
+                  <div style={{ fontSize: fs(13), color: t.textDim, lineHeight: 1.6 }}>
+                    Ask anything about training, recovery, nutrition or habits — or tap a quick prompt below.
+                  </div>
+                </div>
+              )}
+              {coachChat.map((m, i) => (
+                <div key={i} style={{
+                  display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+                  marginBottom: 8,
+                }}>
+                  <div style={{
+                    maxWidth: "85%", padding: "10px 14px", borderRadius: 14,
+                    borderBottomRightRadius: m.role === "user" ? 4 : 14,
+                    borderBottomLeftRadius: m.role === "user" ? 14 : 4,
+                    background: m.role === "user" ? t.accent : t.card,
+                    border: m.role === "user" ? "none" : `1px solid ${t.border}`,
+                    color: m.role === "user" ? "#fff" : t.text,
+                    fontSize: fs(13), lineHeight: 1.55, whiteSpace: "pre-wrap",
+                    overflowWrap: "break-word",
+                  }}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+              {coachLoading && (
+                <div style={{ display: "flex", marginBottom: 8 }}>
+                  <div style={{
+                    padding: "10px 14px", borderRadius: 14, background: t.card,
+                    border: `1px solid ${t.border}`, color: t.textDim, fontSize: fs(13),
+                  }}>
+                    Thinking…
+                  </div>
+                </div>
+              )}
+              {coachError && (
+                <div style={{ fontSize: fs(12), color: t.danger, marginBottom: 8, textAlign: "center" }}>{coachError}</div>
+              )}
+              <div ref={coachEndRef} />
+            </div>
+
+            {/* Quick prompts */}
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+              {[
+                "Plan today's session",
+                "How's my week going?",
+                "Recovery stack for today?",
+                "Motivate me",
+              ].map(q => (
+                <button key={q} onClick={() => sendCoachMessage(q)} disabled={coachLoading}
+                  style={{
+                    padding: "7px 12px", borderRadius: 20, border: `1px solid ${t.border}`,
+                    background: t.card, color: t.accent, fontSize: fs(11), fontWeight: 600,
+                    cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit",
+                  }}>
+                  {q}
+                </button>
+              ))}
+              {coachChat.length > 0 && (
+                <button onClick={() => { if (confirm("Clear coach conversation?")) setCoachChat([]); }}
+                  style={{
+                    padding: "7px 12px", borderRadius: 20, border: `1px solid ${t.border}`,
+                    background: "transparent", color: t.textDim, fontSize: fs(11),
+                    cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit",
+                  }}>
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Input */}
+            <div style={{ display: "flex", gap: 6, paddingBottom: 8 }}>
+              <input
+                type="text"
+                placeholder="Ask your coach..."
+                value={coachInput}
+                onChange={e => setCoachInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") sendCoachMessage(coachInput); }}
+                style={{
+                  flex: 1, padding: "12px 14px", borderRadius: 12,
+                  border: `1px solid ${t.border}`, background: t.card,
+                  color: t.text, fontSize: fs(14), fontFamily: "inherit", outline: "none",
+                  boxSizing: "border-box", minWidth: 0,
+                }}
+              />
+              <button onClick={() => sendCoachMessage(coachInput)} disabled={coachLoading || !coachInput.trim()}
+                style={{
+                  width: 48, borderRadius: 12, border: "none",
+                  background: coachInput.trim() && !coachLoading ? t.gradient : t.cardAlt,
+                  color: coachInput.trim() && !coachLoading ? "#fff" : t.textMuted,
+                  fontSize: fs(16), cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+                }}>
+                ↑
+              </button>
+            </div>
           </div>
         )}
 
@@ -2881,7 +3763,7 @@ function SuperhumanApp() {
               const last7 = [];
               for (let i = 0; i < 7; i++) {
                 const d = new Date(); d.setDate(d.getDate() - i);
-                const ds = d.toISOString().split("T")[0];
+                const ds = toLocalDateStr(d);
                 const t2 = getDayFoodTotals(ds);
                 if (t2.cal > 0) last7.push(t2);
               }
@@ -2895,7 +3777,7 @@ function SuperhumanApp() {
               const calData = [];
               for (let i = 6; i >= 0; i--) {
                 const d = new Date(); d.setDate(d.getDate() - i);
-                const ds = d.toISOString().split("T")[0];
+                const ds = toLocalDateStr(d);
                 const t2 = getDayFoodTotals(ds);
                 if (t2.cal > 0) calData.push(t2.cal);
               }
@@ -2979,7 +3861,7 @@ function SuperhumanApp() {
                       )}
                     </div>
                   </div>
-                  {history.length >= 2 && <MiniChart data={history.map(h => h.result)} color={t.accent} height={50} label="" />}
+                  {history.length >= 2 && <MiniChart data={history.map(h => parseFloat(h.result))} color={t.accent} height={50} label="" />}
                 </div>
               );
             })}
@@ -3020,7 +3902,10 @@ function SuperhumanApp() {
                   .slice(0, 20)
                   .map(([date, session]) => {
                     const d = new Date(date + "T12:00:00");
-                    const dayLabel = WORKOUT_DATA[session.week]?.[session.day]?.label || `Day ${session.day}`;
+                    const sr = session.routine || "sh90";
+                    const dayLabel = sr === "yoga"
+                      ? (session.label || "Yoga")
+                      : (getRoutineDayData(sr, session.week, session.day)?.label || `Day ${session.day}`);
                     return (
                       <div key={date} style={{
                         display: "flex", alignItems: "center", gap: 10, padding: "8px 0",
@@ -3033,7 +3918,7 @@ function SuperhumanApp() {
                         }}>✓</div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: fs(13), fontWeight: 500 }}>
-                            W{session.week} · {dayLabel}
+                            {sr === "sh90" ? `W${session.week} · ` : `${ROUTINES[sr]?.icon || ""} `}{dayLabel}
                           </div>
                           <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
                             {d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -3110,9 +3995,11 @@ function SuperhumanApp() {
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 14 }}>My Progress</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
+                  { label: "Round", value: rounds.current },
                   { label: "Program Day", value: programDay > 0 && programDay <= 90 ? `${programDay} / 90` : "—" },
-                  { label: "Current Phase", value: phaseLabel },
-                  { label: "Workouts Done", value: Object.values(sessionLog).filter(s => s.status === "completed").length },
+                  { label: "Current Phase", value: routine === "sh90" ? phaseLabel : ROUTINES[routine].name },
+                  { label: "Workouts (Round)", value: roundCompletedCount },
+                  { label: "Workouts (All Time)", value: Object.values(sessionLog).filter(s => s.status === "completed").length },
                   { label: "Avg Workout", value: (() => {
                     const durs = Object.values(sessionLog).filter(s =>
                       s.status === "completed" && s.startedAt && s.completedAt
@@ -3203,6 +4090,90 @@ function SuperhumanApp() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* ── Workout Routine ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Workout Routine</div>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+                Choose which program drives your Workout tab. Your logs are kept for every routine.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {Object.entries(ROUTINES).map(([key, r]) => {
+                  const isActive = routine === key;
+                  return (
+                    <button key={key}
+                      onClick={() => setRoutine(key)}
+                      style={{
+                        padding: "14px 10px", borderRadius: 12, cursor: "pointer",
+                        border: isActive ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                        background: isActive ? t.accentGlow : t.cardAlt,
+                        color: isActive ? t.accent : t.text,
+                        fontFamily: "inherit", textAlign: "left",
+                      }}>
+                      <div style={{ fontSize: fs(20), marginBottom: 4 }}>{r.icon}</div>
+                      <div style={{ fontSize: fs(13), fontWeight: 700 }}>{r.name}</div>
+                      <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 2, lineHeight: 1.4 }}>{r.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── 90-Day Rounds ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>90-Day Rounds</div>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+                Each completed 90-day cycle is a round. Finish one, archive it, go again.
+              </div>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+                borderRadius: 12, background: t.accentGlow, border: `1px solid ${t.accent}30`, marginBottom: 10,
+              }}>
+                <div style={{ fontSize: fs(26) }}>🔄</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: fs(15), fontWeight: 700, color: t.accent }}>Round {rounds.current}</div>
+                  <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                    {(() => { const d = Math.max(1, Math.floor((new Date(todayStr + "T12:00:00") - roundStartObj) / 86400000) + 1); return d > 90 ? "Day 90+ — ready to finish" : `Day ${d} of 90`; })()} · started {new Date(rounds.startDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {roundCompletedCount} workouts
+                  </div>
+                </div>
+              </div>
+              {rounds.history.slice().reverse().map(h => (
+                <div key={h.round} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                  borderRadius: 12, background: t.cardAlt, marginBottom: 6,
+                }}>
+                  <div style={{ fontSize: fs(18) }}>🏆</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: fs(13), fontWeight: 600 }}>Round {h.round} — Complete</div>
+                    <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                      {new Date(h.startDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} → {new Date(h.endDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })} · {h.workoutsCompleted} workouts
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => {
+                  if (!confirm(`Finish Round ${rounds.current} and start Round ${rounds.current + 1}?\n\nThis archives the current round (${roundCompletedCount} workouts) and restarts the program at Week 1, Day 1 with today as Day 1 of 90. All your history stays.`)) return;
+                  setRounds(prev => ({
+                    current: prev.current + 1, startDate: nextRoundStartDate(),
+                    history: [...prev.history, { round: prev.current, startDate: prev.startDate, endDate: todayStr, workoutsCompleted: roundCompletedCount }],
+                  }));
+                  setNextWorkoutPos({ week: 1, day: 1 });
+                }}
+                style={{
+                  width: "100%", marginTop: 4, padding: "12px", borderRadius: 10,
+                  border: `1px dashed ${t.accent}50`, background: "transparent",
+                  color: t.accent, fontSize: fs(13), fontWeight: 600, cursor: "pointer",
+                  fontFamily: "inherit",
+                }}>
+                Finish Round {rounds.current} → Start Round {rounds.current + 1}
+              </button>
             </div>
 
             {/* ── Workout Mode ── */}
@@ -3359,7 +4330,15 @@ function SuperhumanApp() {
                 },
                 {
                   q: "How does the workout schedule work?",
-                  a: "The program has 72 workouts across 12 weeks, cycling through: Legs A, Torso A, Arms A, Legs B, Torso B, Arms B. Your next workout is always based on what you've completed — not the calendar day. If you miss a day, you pick up where you left off. Miss one day in a week? That becomes your rest day, and you can train on Sunday instead.",
+                  a: "Superhuman 90 has 68 workouts across 12 weeks (11 weeks of 6 workouts plus a 2-day deload), cycling through: Legs A, Torso A, Arms A, Legs B, Torso B, Arms B. Your next workout is always based on what you've completed — not the calendar day. If you miss a day, you pick up where you left off. Omar Monthly and PHAT work differently: they follow the actual weekday (Monday's workout on Monday), with built-in rest days.",
+                },
+                {
+                  q: "How do I switch routines?",
+                  a: "Me tab → Workout Routine. Choose Superhuman 90 (rolling 12-week program), Omar Monthly (Mon–Sun split), PHAT (Layne Norton power/hypertrophy), or Yoga (curated YouTube sessions). Your logs are kept per routine, and you can switch any time — the Workout tab follows whichever is active.",
+                },
+                {
+                  q: "What are rounds?",
+                  a: "A round is one full 90-day cycle. When you finish (or want to restart), use 'Finish Round → Start Round' in the Me tab: the completed round is archived with its stats, the program resets to Week 1 Day 1, and the day counter restarts at Day 1 of 90. All history is kept.",
                 },
                 {
                   q: "What do the colored dots on the calendar mean?",
@@ -3379,7 +4358,7 @@ function SuperhumanApp() {
                 },
                 {
                   q: "How does the habit tracker work?",
-                  a: "The Habits tab tracks 8 daily habits. Tap the checkbox to toggle each habit. Some habits (Workout, 10K Steps) expand for extra detail. Your streak and completion rate are calculated automatically. Aim for 80%+ daily.",
+                  a: "The Habits tab tracks 8 daily habits. Tap the checkbox to toggle each habit. Some habits (Workout, 5K Steps) expand for extra detail. Your streak and completion rate are calculated automatically — Track Weight counts half toward the daily percentage so a skipped weigh-in barely dents your score. Aim for 80%+ daily.",
                 },
                 {
                   q: "How does weight tracking work?",
@@ -3391,11 +4370,11 @@ function SuperhumanApp() {
                 },
                 {
                   q: "Is my data saved?",
-                  a: "All data is stored locally on your device using browser storage. Nothing is sent to a server. If you clear your browser data, your progress will be lost. Consider screenshotting your progress periodically.",
+                  a: "Data is stored locally on your device and synced to a private cloud backup (Supabase) automatically. Your device's local copy is the source of truth; the cloud copy is used to restore your data on a fresh install. You can also export everything as JSON from the Data section.",
                 },
-              ].map((item, i) => (
+              ].map((item, i, arr) => (
                 <div key={i} style={{
-                  borderBottom: i < 9 ? `1px solid ${t.border}` : "none",
+                  borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
                 }}>
                   <button
                     onClick={() => setExpandedFaq(expandedFaq === i ? null : i)}
@@ -3499,7 +4478,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v2.2
+              Superhuman 90 · v3.0
             </div>
           </div>
         )}
@@ -3518,6 +4497,7 @@ function SuperhumanApp() {
           {[
             { id: "habits", label: "Habits", icon: "✅" },
             { id: "workout", label: "Workout", icon: "🏋️" },
+            { id: "coach", label: "Coach", icon: "🤖" },
             { id: "progress", label: "Progress", icon: "📊" },
             { id: "profile", label: "Me", icon: "👤" },
           ].map(({ id, label, icon }) => (
@@ -3555,7 +4535,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v2.2';
+    var APP_VERSION = 'v3.0';
 
     // Register service worker
     if ('serviceWorker' in navigator) {
