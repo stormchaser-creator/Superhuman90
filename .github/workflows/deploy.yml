@@ -1,0 +1,49 @@
+name: Deploy to Netlify
+
+# Auto-deploys sh90.netlify.app on every push to main — same routine as
+# CredentialDOMD's deploy workflow, targeting Netlify instead of GH Pages.
+# The app self-updates on users' devices via service-worker skip-waiting
+# plus the version.txt check (launch + resume).
+#
+# Manual deploy: Actions tab → Deploy to Netlify → Run workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'sw.js'
+      - 'manifest.json'
+      - 'version.txt'
+      - '_headers'
+      - 'favicon.ico'
+      - 'icon-*.png'
+      - 'icon-*.svg'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — version.txt must match APP_VERSION in index.html
+        run: |
+          BAKED=$(grep -o "var APP_VERSION = '[^']*'" index.html | cut -d"'" -f2)
+          REMOTE=$(cat version.txt | tr -d '[:space:]')
+          echo "index.html: $BAKED · version.txt: $REMOTE"
+          if [ "$BAKED" != "$REMOTE" ]; then
+            echo "::error::version.txt ($REMOTE) != APP_VERSION in index.html ($BAKED) — clients would reload forever. Bump both (and CACHE_VERSION in sw.js)."
+            exit 1
+          fi
+
+      - name: Deploy to Netlify (production)
+        run: npx --yes netlify-cli@17 deploy --prod --dir=. --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions: ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

@@ -15,6 +15,38 @@ CREATE TABLE IF NOT EXISTS sessions (id UUID DEFAULT gen_random_uuid() PRIMARY K
 -- ALTER TABLE sessions ADD COLUMN IF NOT EXISTS label TEXT;
 -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS rounds JSONB;
 
+-- ── Support tickets (CredentialDOMD pattern, device-keyed) ──────────────────
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id TEXT NOT NULL REFERENCES devices(device_id),
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('bug','feature_request','data_issue','question','other')),
+  priority TEXT DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+  status TEXT DEFAULT 'open' CHECK (status IN ('open','in_progress','waiting_user','resolved','closed')),
+  context_page TEXT,
+  app_version TEXT,
+  resolution_note TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS support_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  author TEXT NOT NULL DEFAULT 'user', -- 'user' | 'agent'
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sh90_tickets_status  ON support_tickets (status, priority, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sh90_messages_ticket ON support_messages (ticket_id, created_at);
+ALTER TABLE support_tickets  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE support_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS support_tickets_all ON support_tickets;
+CREATE POLICY support_tickets_all  ON support_tickets  FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS support_messages_all ON support_messages;
+CREATE POLICY support_messages_all ON support_messages FOR ALL USING (true) WITH CHECK (true);
+
 CREATE TABLE IF NOT EXISTS weight_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, weight DECIMAL NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
 
 CREATE TABLE IF NOT EXISTS habit_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), date DATE NOT NULL, h0 BOOLEAN DEFAULT false, h1 BOOLEAN DEFAULT false, h2 BOOLEAN DEFAULT false, h3 BOOLEAN DEFAULT false, h4 BOOLEAN DEFAULT false, h5 BOOLEAN DEFAULT false, h6 BOOLEAN DEFAULT false, h7 BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));

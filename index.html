@@ -1060,9 +1060,81 @@ function SuperhumanApp() {
   const [coachError, setCoachError] = useState("");
   const coachEndRef = React.useRef(null);
   useEffect(() => { coachEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [coachChat, coachLoading]);
+  // ── Support tickets (CredentialDOMD pattern, device-keyed) ──
+  const [tickets, setTickets] = useState(null); // null = not loaded
+  const [ticketsError, setTicketsError] = useState("");
+  const [showTicketForm, setShowTicketForm] = useState(false);
+  const [ticketForm, setTicketForm] = useState({ category: "bug", priority: "normal", subject: "", body: "" });
+  const [ticketSubmitting, setTicketSubmitting] = useState(false);
+  const [ticketDone, setTicketDone] = useState(false);
+  const [expandedTicket, setExpandedTicket] = useState(null);
+  const [ticketReply, setTicketReply] = useState("");
+
+  const ticketsBackendMissing = (msg) => /does not exist|relation|schema cache/i.test(String(msg || ""));
+
+  const loadTickets = async () => {
+    if (!supabase) { setTicketsError("Not connected to backend."); return; }
+    try {
+      const { data, error } = await supabase.from("support_tickets")
+        .select("*, support_messages(*)")
+        .eq("device_id", DEVICE_ID)
+        .order("created_at", { ascending: false })
+        .limit(25);
+      if (error) {
+        setTicketsError(ticketsBackendMissing(error.message)
+          ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
+          : error.message);
+        setTickets([]);
+        return;
+      }
+      setTicketsError("");
+      setTickets((data || []).map(t => ({
+        ...t,
+        messages: (t.support_messages || []).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      })));
+    } catch (e) { setTicketsError(e.message || "Failed to load tickets"); setTickets([]); }
+  };
+  useEffect(() => { if (tab === "profile" && tickets === null) loadTickets(); }, [tab]);
+
+  const submitTicket = async () => {
+    const subject = ticketForm.subject.trim(), body = ticketForm.body.trim();
+    if (subject.length < 3) { setTicketsError("Subject must be at least 3 characters."); return; }
+    if (body.length < 10) { setTicketsError("Tell it a bit more — at least 10 characters."); return; }
+    if (!supabase) { setTicketsError("Not connected to backend."); return; }
+    setTicketSubmitting(true); setTicketsError("");
+    try {
+      const { error } = await supabase.from("support_tickets").insert({
+        device_id: DEVICE_ID,
+        subject: subject.slice(0, 200),
+        body: body.slice(0, 10000),
+        category: ticketForm.category,
+        priority: ticketForm.priority,
+        context_page: tab,
+        app_version: "v3.1",
+      });
+      if (error) throw new Error(ticketsBackendMissing(error.message)
+        ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
+        : error.message);
+      setTicketDone(true);
+      setTicketForm({ category: "bug", priority: "normal", subject: "", body: "" });
+      setTimeout(() => { setTicketDone(false); setShowTicketForm(false); }, 1800);
+      loadTickets();
+    } catch (e) { setTicketsError(e.message || "Failed to submit"); }
+    setTicketSubmitting(false);
+  };
+
+  const replyToTicket = async (ticketId) => {
+    const body = ticketReply.trim();
+    if (!body || !supabase) return;
+    try {
+      const { error } = await supabase.from("support_messages").insert({ ticket_id: ticketId, author: "user", body: body.slice(0, 10000) });
+      if (error) throw new Error(error.message);
+      await supabase.from("support_tickets").update({ status: "open", updated_at: new Date().toISOString() }).eq("id", ticketId);
+      setTicketReply("");
+      loadTickets();
+    } catch (e) { setTicketsError(e.message || "Failed to reply"); }
+  };
   const [expandedFaq, setExpandedFaq] = useState(null);
-  const [feedbackText, setFeedbackText] = useState("");
-  const [feedbackSent, setFeedbackSent] = useState(false);
 
   // Sync text size to module-level scaler
   _currentTextSize = textSize;
@@ -4404,72 +4476,190 @@ function SuperhumanApp() {
               ))}
             </div>
 
-            {/* ── Feedback / Bug Report ── */}
+            {/* ── Support & Tickets (CredentialDOMD pattern) ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
               border: `1px solid ${t.border}`,
             }}>
-              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Feedback & Bug Reports</div>
-              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
-                Found a crash or have a suggestion? Describe the issue below and it will be saved locally for review.
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ fontSize: fs(16), fontWeight: 600 }}>Support & Tickets</div>
+                <button onClick={() => { setShowTicketForm(!showTicketForm); setTicketsError(""); }}
+                  style={{
+                    padding: "6px 12px", borderRadius: 8, border: "none",
+                    background: showTicketForm ? t.cardAlt : t.gradient,
+                    color: showTicketForm ? t.textDim : "#fff",
+                    fontSize: fs(12), fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  {showTicketForm ? "Cancel" : "+ New Ticket"}
+                </button>
               </div>
-              {feedbackSent ? (
-                <div style={{
-                  textAlign: "center", padding: "20px 0",
-                }}>
+              <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+                Bugs, feature requests, anything off. Tickets sync to the cloud and the nightly
+                maintenance routine picks them up.
+              </div>
+
+              {ticketDone ? (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
                   <div style={{ fontSize: fs(32), marginBottom: 8 }}>✓</div>
-                  <div style={{ fontSize: fs(14), fontWeight: 600, color: t.success }}>Feedback Saved</div>
-                  <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>Your report has been saved locally.</div>
-                  <button
-                    onClick={() => setFeedbackSent(false)}
-                    style={{
-                      marginTop: 12, padding: "8px 20px", borderRadius: 8,
-                      border: `1px solid ${t.border}`, background: "transparent",
-                      color: t.textDim, fontSize: fs(12), cursor: "pointer", fontFamily: "inherit",
-                    }}
-                  >Submit Another</button>
+                  <div style={{ fontSize: fs(14), fontWeight: 600, color: t.success }}>Ticket received.</div>
+                  <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>It's queued for the next maintenance run.</div>
                 </div>
-              ) : (
-                <>
-                  <textarea
-                    placeholder={"Describe the issue or suggestion...\n\nInclude:\n• What happened\n• What you expected\n• Which tab/screen it occurred on"}
-                    value={feedbackText}
-                    onChange={e => setFeedbackText(e.target.value)}
-                    rows={5}
+              ) : showTicketForm && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Category</div>
+                      <select value={ticketForm.category} onChange={e => setTicketForm(p => ({ ...p, category: e.target.value }))}
+                        style={{
+                          width: "100%", padding: "10px 8px", borderRadius: 10, border: `1px solid ${t.border}`,
+                          background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none",
+                        }}>
+                        <option value="bug">Bug / broken</option>
+                        <option value="feature_request">Feature request</option>
+                        <option value="data_issue">Data issue</option>
+                        <option value="question">Question</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Priority</div>
+                      <select value={ticketForm.priority} onChange={e => setTicketForm(p => ({ ...p, priority: e.target.value }))}
+                        style={{
+                          width: "100%", padding: "10px 8px", borderRadius: 10, border: `1px solid ${t.border}`,
+                          background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none",
+                        }}>
+                        <option value="low">Low</option>
+                        <option value="normal">Normal</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+                  </div>
+                  <input
+                    placeholder="Short summary"
+                    value={ticketForm.subject}
+                    maxLength={200}
+                    onChange={e => setTicketForm(p => ({ ...p, subject: e.target.value }))}
                     style={{
-                      width: "100%", padding: "12px", borderRadius: 10,
-                      border: `1px solid ${t.border}`, background: t.cardAlt,
-                      color: t.text, fontSize: fs(13), fontFamily: "inherit",
-                      resize: "vertical", outline: "none", lineHeight: 1.5,
-                      boxSizing: "border-box",
+                      width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`,
+                      background: t.cardAlt, color: t.text, fontSize: fs(14), fontFamily: "inherit",
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                  <textarea
+                    placeholder={"What happened / what you want changed...\n\nInclude steps, which tab, what you expected."}
+                    value={ticketForm.body}
+                    onChange={e => setTicketForm(p => ({ ...p, body: e.target.value }))}
+                    rows={4}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 10, border: `1px solid ${t.border}`,
+                      background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit",
+                      resize: "vertical", outline: "none", lineHeight: 1.5, boxSizing: "border-box",
                     }}
                   />
                   <button
-                    onClick={() => {
-                      if (feedbackText.trim()) {
-                        const existing = loadState("feedbackLog", []);
-                        existing.push({
-                          date: new Date().toISOString(),
-                          text: feedbackText.trim(),
-                          theme,
-                          selectedDate,
-                        });
-                        saveState("feedbackLog", existing);
-                        setFeedbackText("");
-                        setFeedbackSent(true);
-                      }
-                    }}
+                    onClick={submitTicket}
+                    disabled={ticketSubmitting || ticketForm.subject.trim().length < 3 || ticketForm.body.trim().length < 10}
                     style={{
-                      width: "100%", marginTop: 8, padding: "12px", borderRadius: 10,
-                      border: "none", background: feedbackText.trim() ? t.gradient : t.cardAlt,
-                      color: feedbackText.trim() ? "#fff" : t.textMuted,
-                      fontSize: fs(14), fontWeight: 600, cursor: feedbackText.trim() ? "pointer" : "default",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Submit Feedback
+                      width: "100%", padding: "12px", borderRadius: 10, border: "none",
+                      background: (ticketForm.subject.trim().length >= 3 && ticketForm.body.trim().length >= 10 && !ticketSubmitting) ? t.gradient : t.cardAlt,
+                      color: (ticketForm.subject.trim().length >= 3 && ticketForm.body.trim().length >= 10 && !ticketSubmitting) ? "#fff" : t.textMuted,
+                      fontSize: fs(14), fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                    }}>
+                    {ticketSubmitting ? "Sending..." : "Send Ticket"}
                   </button>
-                </>
+                </div>
+              )}
+
+              {ticketsError && (
+                <div style={{
+                  padding: "8px 10px", borderRadius: 8, marginBottom: 10,
+                  background: t.danger + "15", color: t.danger, fontSize: fs(12), fontWeight: 600, lineHeight: 1.5,
+                }}>{ticketsError}</div>
+              )}
+
+              {/* Ticket list */}
+              {tickets && tickets.length > 0 && (
+                <div>
+                  <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 8, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>
+                    MY TICKETS · {tickets.filter(tk => !["resolved", "closed"].includes(tk.status)).length} open
+                  </div>
+                  {tickets.map(tk => {
+                    const isExp = expandedTicket === tk.id;
+                    const statusColor = tk.status === "resolved" || tk.status === "closed" ? t.success
+                      : tk.status === "in_progress" ? t.warning : t.accent;
+                    return (
+                      <div key={tk.id} style={{
+                        background: t.cardAlt, borderRadius: 12, marginBottom: 6, overflow: "hidden",
+                        border: `1px solid ${isExp ? t.accent + "40" : "transparent"}`,
+                      }}>
+                        <div onClick={() => setExpandedTicket(isExp ? null : tk.id)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer",
+                        }}>
+                          <span style={{
+                            padding: "2px 8px", borderRadius: 10, fontSize: fs(9), fontWeight: 700,
+                            fontFamily: "'DM Mono', monospace", letterSpacing: 0.5, textTransform: "uppercase",
+                            background: statusColor + "20", color: statusColor, flexShrink: 0,
+                          }}>{tk.status.replace("_", " ")}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: fs(13), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.subject}</div>
+                            <div style={{ fontSize: fs(10), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
+                              {tk.category} · {tk.priority} · {new Date(tk.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                              {tk.messages.length > 0 && ` · ${tk.messages.length} 💬`}
+                            </div>
+                          </div>
+                          <span style={{ fontSize: fs(10), color: t.textDim, transform: isExp ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+                        </div>
+                        {isExp && (
+                          <div style={{ padding: "0 12px 12px" }}>
+                            <div style={{ fontSize: fs(12), color: t.textDim, lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 8 }}>{tk.body}</div>
+                            {tk.resolution_note && (
+                              <div style={{ padding: "8px 10px", borderRadius: 8, background: t.success + "12", fontSize: fs(12), color: t.text, lineHeight: 1.5, marginBottom: 8 }}>
+                                ✅ {tk.resolution_note}
+                              </div>
+                            )}
+                            {tk.messages.map(m => (
+                              <div key={m.id} style={{
+                                padding: "8px 10px", borderRadius: 8, marginBottom: 6,
+                                background: m.author === "agent" ? t.accentGlow : t.card,
+                                fontSize: fs(12), lineHeight: 1.5, whiteSpace: "pre-wrap",
+                              }}>
+                                <div style={{ fontSize: fs(9), color: t.textDim, fontFamily: "'DM Mono', monospace", marginBottom: 2, textTransform: "uppercase" }}>
+                                  {m.author === "agent" ? "🤖 maintenance agent" : "you"} · {new Date(m.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                </div>
+                                {m.body}
+                              </div>
+                            ))}
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <input
+                                placeholder="Reply..."
+                                value={isExp ? ticketReply : ""}
+                                onChange={e => setTicketReply(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") replyToTicket(tk.id); }}
+                                style={{
+                                  flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.border}`,
+                                  background: t.card, color: t.text, fontSize: fs(12), fontFamily: "inherit",
+                                  outline: "none", minWidth: 0, boxSizing: "border-box",
+                                }}
+                              />
+                              <button onClick={() => replyToTicket(tk.id)} disabled={!ticketReply.trim()}
+                                style={{
+                                  padding: "8px 12px", borderRadius: 8, border: "none",
+                                  background: ticketReply.trim() ? t.accent : t.card, color: ticketReply.trim() ? "#fff" : t.textMuted,
+                                  fontSize: fs(12), fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+                                }}>↑</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {tickets && tickets.length === 0 && !ticketsError && (
+                <div style={{ fontSize: fs(12), color: t.textDim, textAlign: "center", padding: "8px 0" }}>
+                  No tickets yet.
+                </div>
               )}
             </div>
 
@@ -4478,7 +4668,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.0
+              Superhuman 90 · v3.1
             </div>
           </div>
         )}
@@ -4535,16 +4725,23 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.0';
+    var APP_VERSION = 'v3.1';
 
-    // Register service worker
+    // Register service worker — force update on new deploys (CredentialDOMD pattern)
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').then(function(reg) {
         reg.update();
+        // A new worker is already installed and waiting → activate it now
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
         reg.addEventListener('updatefound', function() {
           var newWorker = reg.installing;
           if (newWorker) {
             newWorker.addEventListener('statechange', function() {
+              if (newWorker.state === 'installed' && reg.waiting) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
               if (newWorker.state === 'activated') {
                 window.location.reload();
               }
@@ -4554,28 +4751,47 @@ function SuperhumanApp() {
       });
     }
 
-    // ── iOS PWA force-update check ──
-    // On every launch, fetch a tiny version file. If it differs from
-    // the baked-in APP_VERSION, nuke the caches and hard-reload.
+    // ── Force-update check ──
+    // Fetch a tiny version file on launch AND whenever the app is resumed.
+    // If it differs from the baked-in APP_VERSION, nuke caches and hard-reload —
+    // a PWA resumed from the app switcher never re-runs its launch code, which
+    // is why deploys used to be invisible until a force-quit.
     (function() {
-      if (!navigator.standalone && !window.matchMedia('(display-mode: standalone)').matches) return;
-      fetch('./version.txt?t=' + Date.now(), { cache: 'no-store' })
-        .then(function(r) { return r.text(); })
-        .then(function(remote) {
-          if (remote.trim() !== APP_VERSION) {
-            // Clear all caches
+      var checking = false;
+      function checkVersion() {
+        if (checking) return;
+        checking = true;
+        fetch('./version.txt?t=' + Date.now(), { cache: 'no-store' })
+          .then(function(r) { return r.text(); })
+          .then(function(remote) {
+            checking = false;
+            remote = (remote || '').trim();
+            // Sanity: only act on a real version string (a 404 page must not trigger reloads)
+            if (!/^v[\d.]+$/.test(remote) || remote === APP_VERSION) return;
+            // Throttle: never force-reload more than once a minute (guards reload loops)
+            var last = parseInt(sessionStorage.getItem('sh90_last_forced_reload') || '0', 10);
+            if (Date.now() - last < 60000) return;
+            sessionStorage.setItem('sh90_last_forced_reload', String(Date.now()));
             if ('caches' in window) {
               caches.keys().then(function(keys) {
                 return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-              }).then(function() {
-                window.location.reload();
-              });
+              }).then(function() { window.location.reload(); });
             } else {
               window.location.reload();
             }
+          })
+          .catch(function() { checking = false; });
+      }
+      checkVersion();
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+          checkVersion();
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistration().then(function(r) { if (r) r.update(); });
           }
-        })
-        .catch(function() {});
+        }
+      });
+      setInterval(checkVersion, 15 * 60 * 1000);
     })();
   </script>
 </body>

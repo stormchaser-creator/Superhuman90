@@ -1,6 +1,6 @@
 // Bump this version string whenever you deploy new content.
 // The old cache will be deleted and everything re-fetched.
-const CACHE_VERSION = 'sh90-v6';
+const CACHE_VERSION = 'sh90-v7';
 
 const PRECACHE_URLS = [
   './',
@@ -18,6 +18,13 @@ self.addEventListener('install', (event) => {
   );
   // Activate immediately instead of waiting for old tabs to close
   self.skipWaiting();
+});
+
+// Listen for skip-waiting message from the page (same pattern as CredentialDOMD)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activate: delete old caches
