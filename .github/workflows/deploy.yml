@@ -43,7 +43,8 @@ jobs:
           fi
 
       - name: Deploy to Netlify (production)
-        run: npx --yes netlify-cli@17 deploy --prod --dir=. --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions: ${{ github.sha }}"
+        run: |
+          npx --yes netlify-cli@17 deploy --prod --dir=. --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions ${{ github.sha }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
