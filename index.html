@@ -129,18 +129,55 @@
     };
     const DEVICE_ID = getDeviceId();
 
-    // Register device in Supabase (fire-and-forget)
-    const registerDevice = async () => {
-      if (!supabase) return;
-      try {
-        await supabase.from("devices").upsert({ device_id: DEVICE_ID }, { onConflict: "device_id" });
-      } catch (e) { console.warn("Device registration failed:", e); }
+    // ── Anonymous auth + device claim ──
+    // Each device signs in anonymously once (session persists in localStorage) and
+    // claims its device_id server-side: sh90_claim_device() stamps user_id = auth.uid()
+    // on this device's rows, and RLS restricts every table to user_id = auth.uid().
+    // The device_id is the durable identity anchor: if the auth session is ever lost,
+    // a fresh anonymous user re-claims the same device_id and nothing is orphaned.
+    let _deviceAuthP = null;
+    const ensureDeviceAuth = () => {
+      if (!supabase) return Promise.resolve(false);
+      if (!_deviceAuthP) {
+        _deviceAuthP = (async () => {
+          try {
+            let session = (await supabase.auth.getSession()).data.session;
+            if (!session) {
+              const { data, error } = await supabase.auth.signInAnonymously();
+              if (error) throw error;
+              session = data.session;
+            }
+            const { error } = await supabase.rpc("sh90_claim_device", { p_device_id: DEVICE_ID });
+            if (error) throw error;
+            return true;
+          } catch (e) {
+            console.warn("SH90: device auth failed (will retry):", (e && e.message) || e);
+            _deviceAuthP = null; // allow retry on the next sync attempt
+            return false;
+          }
+        })();
+      }
+      return _deviceAuthP;
     };
-    registerDevice();
+    ensureDeviceAuth();
+
+    // Re-claim on resume: if two devices share a device_id (?device= link flow),
+    // ownership follows whichever device is active
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState !== "visible") return;
+      var alreadyAuthed = !!_deviceAuthP;
+      ensureDeviceAuth().then(function(ok) {
+        if (ok && alreadyAuthed) {
+          supabase.rpc("sh90_claim_device", { p_device_id: DEVICE_ID }).then(function(res) {
+            if (res && res.error) console.warn("SH90: device re-claim failed:", res.error.message);
+          });
+        }
+      });
+    });
 
     // ── Supabase Sync Helpers ──
     const syncToSupabase = async (table, data, conflictCols) => {
-      if (!supabase) return;
+      if (!supabase || !(await ensureDeviceAuth())) return;
       try {
         // supabase-js v2 returns {error} instead of throwing — check it or failures are invisible
         const { error } = await supabase.from(table).upsert(data, { onConflict: conflictCols });
@@ -150,7 +187,7 @@
 
     // Delete cloud rows when local data is removed — otherwise a future restore resurrects them
     const deleteFromSupabase = async (table, match) => {
-      if (!supabase) return;
+      if (!supabase || !(await ensureDeviceAuth())) return;
       try {
         const { error } = await supabase.from(table).delete().match({ device_id: DEVICE_ID, ...match });
         if (error) console.warn("SH90: delete failed for " + table + ":", error.message || error);
@@ -158,7 +195,7 @@
     };
 
     const loadFromSupabase = async (table, filters) => {
-      if (!supabase) return null;
+      if (!supabase || !(await ensureDeviceAuth())) return null;
       try {
         // Page through results — PostgREST silently caps un-ranged selects at 1000 rows,
         // and a full program's exercise_logs exceeds that. Stable order is required or
@@ -182,7 +219,7 @@
     };
     // Sync profile to Supabase
     const syncProfile = async (profileData, opts) => {
-      if (!supabase) return;
+      if (!supabase || !(await ensureDeviceAuth())) return;
       var row = {
         device_id: DEVICE_ID,
         name: profileData.name || "",
@@ -234,7 +271,7 @@
 
     // Sync session
     const syncSession = async (date, session) => {
-      if (!supabase) return;
+      if (!supabase || !(await ensureDeviceAuth())) return;
       const row = {
         device_id: DEVICE_ID,
         date: date,
@@ -305,7 +342,7 @@
 
     // Sync food entry
     const syncFoodEntry = async (entry, date) => {
-      if (!supabase) return;
+      if (!supabase || !(await ensureDeviceAuth())) return;
       const row = {
         device_id: DEVICE_ID,
         date: date,
@@ -360,9 +397,10 @@
     // ── Full Migration: push all localStorage data to Supabase ──
     const migrateToSupabase = async () => {
       if (!supabase) return;
-      // Local flag, not devices-row existence: registerDevice() races this check,
-      // and its upsert landing first would permanently skip migration
+      // Local flag, not devices-row existence: the startup claim races this check,
+      // and its devices-row insert landing first would permanently skip migration
       if (localStorage.getItem("sh90_migrated")) return;
+      if (!(await ensureDeviceAuth())) return; // no flag set — retried next launch
       try {
         // Check if device already exists
         var existing = await supabase.from("devices").select("device_id").eq("device_id", DEVICE_ID).single();
@@ -374,9 +412,6 @@
       } catch (e) { /* device not found, proceed with migration */ }
 
       console.log("SH90: Migrating localStorage to Supabase...");
-
-      // Register device
-      await registerDevice();
 
       // Migrate profile
       var profile = loadProfile();
@@ -1073,7 +1108,7 @@ function SuperhumanApp() {
   const ticketsBackendMissing = (msg) => /does not exist|relation|schema cache/i.test(String(msg || ""));
 
   const loadTickets = async () => {
-    if (!supabase) { setTicketsError("Not connected to backend."); return; }
+    if (!supabase || !(await ensureDeviceAuth())) { setTicketsError("Not connected to backend."); return; }
     try {
       const { data, error } = await supabase.from("support_tickets")
         .select("*, support_messages(*)")
@@ -1100,7 +1135,7 @@ function SuperhumanApp() {
     const subject = ticketForm.subject.trim(), body = ticketForm.body.trim();
     if (subject.length < 3) { setTicketsError("Subject must be at least 3 characters."); return; }
     if (body.length < 10) { setTicketsError("Tell it a bit more — at least 10 characters."); return; }
-    if (!supabase) { setTicketsError("Not connected to backend."); return; }
+    if (!supabase || !(await ensureDeviceAuth())) { setTicketsError("Not connected to backend."); return; }
     setTicketSubmitting(true); setTicketsError("");
     try {
       const { error } = await supabase.from("support_tickets").insert({
@@ -1110,7 +1145,7 @@ function SuperhumanApp() {
         category: ticketForm.category,
         priority: ticketForm.priority,
         context_page: tab,
-        app_version: "v3.2",
+        app_version: "v3.3",
       });
       if (error) throw new Error(ticketsBackendMissing(error.message)
         ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
@@ -1125,7 +1160,7 @@ function SuperhumanApp() {
 
   const replyToTicket = async (ticketId) => {
     const body = ticketReply.trim();
-    if (!body || !supabase) return;
+    if (!body || !supabase || !(await ensureDeviceAuth())) return;
     try {
       const { error } = await supabase.from("support_messages").insert({ ticket_id: ticketId, author: "user", body: body.slice(0, 10000) });
       if (error) throw new Error(error.message);
@@ -4676,7 +4711,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.2
+              Superhuman 90 · v3.3
             </div>
           </div>
         )}
@@ -4733,7 +4768,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.2';
+    var APP_VERSION = 'v3.3';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern)
     if ('serviceWorker' in navigator) {
