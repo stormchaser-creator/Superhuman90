@@ -1229,7 +1229,7 @@ function SuperhumanApp() {
         category: ticketForm.category,
         priority: ticketForm.priority,
         context_page: tab,
-        app_version: "v3.5",
+        app_version: "v3.6",
       });
       if (error) throw new Error(ticketsBackendMissing(error.message)
         ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
@@ -1528,13 +1528,14 @@ function SuperhumanApp() {
   // Archive the current round and start the next one. Day 1 is the user's call:
   // finishing a round in the evening usually means "fresh start tomorrow".
   const startNewRound = () => {
-    if (!confirm(`Finish Round ${rounds.current} and start Round ${rounds.current + 1}?\n\nThis archives the current round (${roundCompletedCount} workouts) and restarts the program at Week 1, Day 1. All your history stays.`)) return;
-    const startTomorrow = confirm(`When should Day 1 of 90 be?\n\nOK = tomorrow\nCancel = today`);
+    if (!confirm(`Finish Cycle ${rounds.current} and start Cycle ${rounds.current + 1}?\n\nThis archives the current cycle (${roundCompletedCount} workouts) and starts a fresh build. All your history stays.`)) return;
+    const startTomorrow = confirm(`When should Day 1 be?\n\nOK = tomorrow\nCancel = today`);
     const base = nextRoundStartDate();
     const sd = startTomorrow ? (base > todayStr ? base : dayAfter(todayStr)) : base;
     setRounds(prev => ({
-      current: prev.current + 1, startDate: sd,
-      history: [...prev.history, { round: prev.current, startDate: prev.startDate, endDate: todayStr, workoutsCompleted: roundCompletedCount }],
+      ...prev,
+      current: prev.current + 1, startDate: sd, maintenance: null,
+      history: [...prev.history, { round: prev.current, startDate: prev.startDate, endDate: todayStr, workoutsCompleted: roundCompletedCount, emphasis: prev.emphasis || "hypertrophy" }],
     }));
     setNextWorkoutPos({ week: 1, day: 1 });
   };
@@ -1668,54 +1669,93 @@ function SuperhumanApp() {
   };
   const dateHasWeight = (ds) => !!weightLog[ds];
 
-  // Program day counter — days into the CURRENT 90-day round
+  // ── Training cycles (v3.6) ── build (6-8 wks, ramping) → de-escalation week →
+  // auto-rebuild. Owner's evidence review: volume ramps ~10 → 16-20 sets/muscle
+  // across the build while RIR shaves 3 → 0-1; the volume reset each cycle is
+  // the point (resensitization). The deload cadence itself is practice-derived,
+  // not RCT-proven — the rule that matters is actually TAKING the light week.
+  const cycleBuildWeeks = rounds.buildWeeks || 6;             // 6-8, configurable
+  const cycleLenDays = (cycleBuildWeeks + 1) * 7;             // build + de-escalation week
+  const maintenanceOn = !!rounds.maintenance;
+
+  // Maintenance ("heavy call") pauses the cycle clock: every elapsed day while
+  // it's on pushes startDate forward one day, so the build resumes exactly
+  // where it stopped. Logging continues normally throughout.
+  useEffect(() => {
+    if (!rounds.maintenance) return;
+    const since = rounds.maintenance.since;
+    if (since >= todayStr) return;
+    const shift = Math.round((new Date(todayStr + "T12:00:00") - new Date(since + "T12:00:00")) / 86400000);
+    setRounds(prev => {
+      if (!prev.maintenance) return prev;
+      const d = new Date(prev.startDate + "T12:00:00");
+      d.setDate(d.getDate() + shift);
+      return { ...prev, startDate: toLocalDateStr(d), maintenance: { since: todayStr } };
+    });
+  }, [todayStr, rounds.maintenance]);
+
   const roundStartObj = new Date(rounds.startDate + "T12:00:00");
   const programDay = Math.floor((selectedDateObj - roundStartObj) / (1000 * 60 * 60 * 24)) + 1;
-  // Sessions completed in the current round (any routine)
+  // Sessions completed in the current cycle (any routine)
   const roundCompletedCount = Object.entries(sessionLog)
     .filter(([date, s]) => s.status === "completed" && date >= rounds.startDate).length;
 
-  // ── Round phase: build → deload (wk 7) → build → de-escalation (final week) ──
-  // The 6-8 week deload rule from the owner's evidence review, expressed inside
-  // the 90-day round: days 43-49 are the mid-round deload, days 84-90 the
-  // closing de-escalation. When day 90 passes, the round archives itself and
-  // the next one starts — build again (see the auto-rollover effect below).
+  // Phase + weekly prescription for a given cycle day
   const getRoundPhase = (d) => {
-    if (d >= 43 && d <= 49) return { key: "deload", label: "DELOAD WEEK", tip: "60-70% of working loads · about half the sets · stay 4+ RIR" };
-    if (d >= 84 && d <= 90) return { key: "deescalation", label: "DE-ESCALATION WEEK", tip: "Wind down: 60-70% loads, half volume. The next round starts automatically — then you rebuild." };
-    return { key: "build", label: "BUILD", tip: null };
+    if (maintenanceOn) return {
+      key: "maintenance", label: "MAINTENANCE · HEAVY CALL",
+      tip: "~1/3 volume, keep loads heavy, 2 sessions/week holds everything (35+ needs ~1/3, not 1/9 — Bickel). Cardio continues. Cycle clock is paused.",
+    };
+    if (d > cycleBuildWeeks * 7) return {
+      key: "deescalation", label: "DE-ESCALATION WEEK",
+      tip: "60-70% of working loads · half the sets · dissipate fatigue, don't detrain. Block boundary: record est. 1RM on 2-3 key lifts + grip strength. Next cycle rebuilds from ~10 sets, loads a notch higher.",
+    };
+    const wk = Math.max(1, Math.ceil(d / 7));
+    const f = wk / cycleBuildWeeks; // 0..1 through the build
+    const setsTarget = Math.round(10 + 8 * ((wk - 1) / Math.max(1, cycleBuildWeeks - 1)));
+    const rir = f <= 0.34 ? "3 RIR" : f <= 0.67 ? "1-2 RIR" : "0-1 RIR";
+    return {
+      key: "build", label: `BUILD · WEEK ${wk} OF ${cycleBuildWeeks}`, week: wk, frac: f,
+      tip: wk === 1
+        ? `Start low: ~10 hard sets/muscle at 3 RIR. Deliberately easy — you're not proving anything in week 1.`
+        : wk >= cycleBuildWeeks
+          ? `Peak week: ~${setsTarget}-20 sets/muscle at 0-1 RIR. Should feel genuinely hard and slightly unsustainable — that's the top of the block.`
+          : `Target ~${setsTarget} sets/muscle this week at ${rir}. Add ~1 set/muscle/week, shave RIR as you go.`,
+    };
   };
   const roundPhase = getRoundPhase(programDay);
-  // Reduced-volume rendering applies to weekday lifting routines only —
-  // SH90 has its own built-in week-12 deload, and yoga has nothing to halve.
-  const phaseReduced = !!ROUTINES[routine]?.weekday && roundPhase.key !== "build" && programDay > 0;
+  // Volume-adjusted rendering applies to weekday lifting routines only —
+  // SH90 has its own built-in week-12 deload, and yoga has nothing to scale.
+  const phaseReduced = !!ROUTINES[routine]?.weekday && programDay > 0 &&
+    (roundPhase.key !== "build" || (roundPhase.week || 9) <= Math.ceil(cycleBuildWeeks / 3));
 
-  // Auto-rollover: the app itself recognizes the end of the de-escalation and
-  // starts the next round to build again. Rounds tile the calendar in exact
-  // 90-day windows; windows with zero workouts slide by without consuming a
-  // round number (a long break shouldn't mint empty trophies).
+  // Auto-rollover: at the end of the de-escalation the app starts the next
+  // cycle itself — rebuild. Cycles tile the calendar in exact windows; windows
+  // with zero workouts slide by without consuming a cycle number. Paused while
+  // maintenance mode is on.
   useEffect(() => {
-    if (routine === "sh90") return; // SH90 keeps the manual 68-workout trophy flow
+    if (routine === "sh90" || rounds.maintenance) return; // SH90 keeps its manual trophy flow
+    const len = ((rounds.buildWeeks || 6) + 1) * 7;
     const daysIn = Math.floor((new Date(todayStr + "T12:00:00") - new Date(rounds.startDate + "T12:00:00")) / 86400000) + 1;
-    if (daysIn <= 90) return;
+    if (daysIn <= len) return;
     setRounds(prev => {
       let start = prev.startDate;
       let current = prev.current;
       const history = [...prev.history];
       const dayCount = (ds) => Math.floor((new Date(todayStr + "T12:00:00") - new Date(ds + "T12:00:00")) / 86400000) + 1;
-      while (dayCount(start) > 90) {
-        const end = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + 89); return toLocalDateStr(d); })();
-        const next = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + 90); return toLocalDateStr(d); })();
+      while (dayCount(start) > len) {
+        const end = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + len - 1); return toLocalDateStr(d); })();
+        const next = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + len); return toLocalDateStr(d); })();
         const done = Object.entries(sessionLog).filter(([date, s]) => s.status === "completed" && date >= start && date <= end).length;
         if (done > 0) {
-          history.push({ round: current, startDate: start, endDate: end, workoutsCompleted: done });
+          history.push({ round: current, startDate: start, endDate: end, workoutsCompleted: done, emphasis: prev.emphasis || "hypertrophy" });
           current += 1;
         }
         start = next;
       }
-      return { current, startDate: start, history };
+      return { ...prev, current, startDate: start, history };
     });
-  }, [todayStr, routine]);
+  }, [todayStr, routine, rounds.buildWeeks, rounds.maintenance]);
 
   const t = THEMES[theme];
   const weekData = routine === "sh90" ? (WORKOUT_DATA[week] || WORKOUT_DATA[5]) : null;
@@ -1727,14 +1767,25 @@ function SuperhumanApp() {
   const dayDataRaw = crossRoutineSession
     ? getRoutineDayData(_selSessRoutine, _selSess.week, _selSess.day)
     : routine === "sh90" ? weekData?.[day] : getRoutineDayData(routine, week, day);
-  // During deload / de-escalation weeks, render the same movements at half the
-  // sets with the load guidance folded into the day description
+  // Render the day's sets scaled to the cycle phase:
+  //   maintenance    → ~1/3 of sets (loads stay heavy)
+  //   de-escalation  → half the sets at 60-70% load
+  //   early build    → one set trimmed off the bigger exercises (start low)
+  //   mid/late build → as written (peak week pushes RIR, not extra rendered sets)
+  const scaleSets = (sets) => {
+    if (roundPhase.key === "maintenance") return Math.max(1, Math.ceil(sets / 3));
+    if (roundPhase.key === "deescalation") return Math.max(1, Math.round(sets / 2));
+    return sets >= 3 ? sets - 1 : sets; // early build
+  };
+  const phaseTag = roundPhase.key === "maintenance" ? "MAINTENANCE"
+    : roundPhase.key === "deescalation" ? "DE-ESCALATION"
+    : "EASY START";
   const dayData = (phaseReduced && !crossRoutineSession && dayDataRaw && dayDataRaw.exercises.length > 0)
     ? {
         ...dayDataRaw,
-        label: `${dayDataRaw.label} · ${roundPhase.key === "deload" ? "DELOAD" : "DE-ESCALATION"}`,
+        label: `${dayDataRaw.label} · ${phaseTag}`,
         desc: roundPhase.tip,
-        exercises: dayDataRaw.exercises.map(ex => ({ ...ex, sets: Math.max(1, Math.round(ex.sets / 2)) })),
+        exercises: dayDataRaw.exercises.map(ex => ({ ...ex, sets: scaleSets(ex.sets) })),
       }
     : dayDataRaw;
   const exercises = dayData?.exercises || [];
@@ -1744,7 +1795,9 @@ function SuperhumanApp() {
   const phaseWeeks = programWeek <= 4 ? "Wk 1-4" : programWeek <= 8 ? "Wk 5-8" : "Wk 9-12";
   const headerSub = routine === "sh90"
     ? `${phaseLabel} · ${phaseWeeks} · Round ${rounds.current}`
-    : `${ROUTINES[routine].name} · Round ${rounds.current}`;
+    : maintenanceOn
+      ? `${ROUTINES[routine].name} · Cycle ${rounds.current} · 🛡️ Maintenance`
+      : `${ROUTINES[routine].name} · Cycle ${rounds.current}`;
 
   const getPrevWeekResult = (exName) => {
     const sorted = Object.entries(logData)
@@ -1982,7 +2035,7 @@ function SuperhumanApp() {
       `Habit rates: ${habitSummary}.`,
       `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein (goal ${calorieGoal} cal).`,
       `Home recovery equipment available: HBOT chamber, red light panel, Neuronic photobiomodulation helmet, hydrogen inhalation, PowerPlate, free weights.`,
-      `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, deload every 6-8 weeks (the app runs this automatically inside each 90-day round: deload week on days 43-49, de-escalation on days 84-90, then the next round auto-starts), hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
+      `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, training organized in cycles of 6-8 build weeks + 1 de-escalation week which the app runs automatically (build ramps ~10 to 16-20 sets/muscle while RIR shaves 3 to 0-1; de-escalation halves volume at 60-70% load; next cycle auto-starts and rebuilds from low volume; maintenance mode = ~1/3 volume at heavy loads with the clock paused during heavy call), hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
       `The user may ask about training, recovery, habits, nutrition, or motivation. If asked for medical advice beyond general fitness, recommend consulting a professional. Keep answers under 200 words unless asked for detail.`,
     ].filter(Boolean).join("\n");
   };
@@ -2229,9 +2282,9 @@ function SuperhumanApp() {
             }}>◂</button>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: fs(14), fontWeight: 600 }}>{weekLabel}</div>
-            {programDay > 0 && programDay <= 90 && (
+            {programDay > 0 && programDay <= (routine === "sh90" ? 90 : cycleLenDays) && (
               <div style={{ fontSize: fs(11), color: t.accent, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
-                Program Day {programDay} of 90
+                {maintenanceOn ? `Cycle paused · maintenance` : routine === "sh90" ? `Program Day ${programDay} of 90` : `Cycle Day ${programDay} of ${cycleLenDays}`}
               </div>
             )}
           </div>
@@ -2702,28 +2755,37 @@ function SuperhumanApp() {
             </div>
             )}
 
-            {/* Round-phase banner (deload / de-escalation weeks) */}
-            {phaseReduced && !crossRoutineSession && (
-              <div style={{
-                padding: "10px 14px", borderRadius: 12, marginBottom: 12,
-                background: roundPhase.key === "deload" ? t.warning + "15" : t.accent + "12",
-                border: `1px solid ${roundPhase.key === "deload" ? t.warning : t.accent}40`,
-              }}>
+            {/* Cycle-phase banner: build week target / de-escalation / maintenance */}
+            {ROUTINES[routine]?.weekday && !crossRoutineSession && programDay > 0 && programDay <= cycleLenDays && (() => {
+              const color = roundPhase.key === "maintenance" ? t.success
+                : roundPhase.key === "deescalation" ? t.warning
+                : t.accent;
+              const icon = roundPhase.key === "maintenance" ? "🛡️"
+                : roundPhase.key === "deescalation" ? "🌊"
+                : (roundPhase.week || 1) >= cycleBuildWeeks ? "🔥" : "📈";
+              return (
                 <div style={{
-                  fontSize: fs(11), fontWeight: 700, letterSpacing: 1.5,
-                  fontFamily: "'DM Mono', monospace",
-                  color: roundPhase.key === "deload" ? t.warning : t.accent,
+                  padding: "10px 14px", borderRadius: 12, marginBottom: 12,
+                  background: color + "12", border: `1px solid ${color}40`,
                 }}>
-                  {roundPhase.key === "deload" ? "🪫" : "🌊"} {roundPhase.label} · DAY {programDay} OF 90
+                  <div style={{
+                    fontSize: fs(11), fontWeight: 700, letterSpacing: 1.5,
+                    fontFamily: "'DM Mono', monospace", color: color,
+                  }}>
+                    {icon} {roundPhase.label}{roundPhase.key !== "maintenance" && ` · DAY ${programDay} OF ${cycleLenDays}`}
+                  </div>
+                  <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 3, lineHeight: 1.5 }}>
+                    {roundPhase.tip}
+                    {roundPhase.key === "deescalation" && (
+                      <> Cycle {rounds.current + 1} begins {(() => { const d = new Date(rounds.startDate + "T12:00:00"); d.setDate(d.getDate() + cycleLenDays); return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); })()}.</>
+                    )}
+                    {(rounds.emphasis || "hypertrophy") === "strength" && roundPhase.key === "build" && (
+                      <> <b>Strength block:</b> compounds 2-3×4-6 @ 3-4 RIR, rest 3+ min; isolations stay light.</>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 3, lineHeight: 1.5 }}>
-                  {roundPhase.tip}
-                  {roundPhase.key === "deescalation" && (
-                    <> Round {rounds.current + 1} begins {(() => { const d = new Date(rounds.startDate + "T12:00:00"); d.setDate(d.getDate() + 90); return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); })()}.</>
-                  )}
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Day Header */}
             {(routine !== "yoga" || crossRoutineSession) && dayData && (
@@ -4274,7 +4336,7 @@ function SuperhumanApp() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
                   { label: "Round", value: rounds.current },
-                  { label: "Program Day", value: programDay > 0 && programDay <= 90 ? `${programDay} / 90` : "—" },
+                  { label: routine === "sh90" ? "Program Day" : "Cycle Day", value: (() => { const lim = routine === "sh90" ? 90 : cycleLenDays; return programDay > 0 && programDay <= lim ? `${programDay} / ${lim}` : "—"; })() },
                   { label: "Current Phase", value: routine === "sh90" ? phaseLabel : ROUTINES[routine].name },
                   { label: "Workouts (Round)", value: roundCompletedCount },
                   { label: "Workouts (All Time)", value: Object.values(sessionLog).filter(s => s.status === "completed").length },
@@ -4401,44 +4463,115 @@ function SuperhumanApp() {
               </div>
             </div>
 
-            {/* ── 90-Day Rounds ── */}
+            {/* ── Training Cycles ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
               border: `1px solid ${t.border}`,
             }}>
-              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>90-Day Rounds</div>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Training Cycles</div>
               <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
                 {routine === "sh90"
-                  ? "Each completed 90-day cycle is a round. Finish one, archive it, go again."
-                  : "Rounds run themselves: build → deload (week 7) → build → de-escalation (final week) → the next round starts automatically and you rebuild."}
+                  ? "On Superhuman 90, a cycle is the classic 90-day round — finish it with the button below."
+                  : `A cycle = ${cycleBuildWeeks} build weeks (volume ramps ~10 → 16-20 sets/muscle, RIR 3 → 0-1) + a de-escalation week, then the next cycle starts by itself. ~${Math.floor(365 / cycleLenDays)} per year on paper, 5 realistically.`}
               </div>
               <div style={{
                 display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                borderRadius: 12, background: t.accentGlow, border: `1px solid ${t.accent}30`, marginBottom: 10,
+                borderRadius: 12, background: maintenanceOn ? t.success + "12" : t.accentGlow,
+                border: `1px solid ${maintenanceOn ? t.success : t.accent}30`, marginBottom: 10,
               }}>
-                <div style={{ fontSize: fs(26) }}>🔄</div>
+                <div style={{ fontSize: fs(26) }}>{maintenanceOn ? "🛡️" : "🔄"}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: fs(15), fontWeight: 700, color: t.accent }}>Round {rounds.current}</div>
+                  <div style={{ fontSize: fs(15), fontWeight: 700, color: maintenanceOn ? t.success : t.accent }}>
+                    Cycle {rounds.current}{(rounds.emphasis || "hypertrophy") === "strength" ? " · Strength" : ""}
+                  </div>
                   <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
                     {(() => {
+                      if (maintenanceOn) return `Paused at Day ${Math.max(1, Math.floor((new Date(todayStr + "T12:00:00") - roundStartObj) / 86400000) + 1)} — maintenance mode`;
                       if (rounds.startDate > todayStr) return "Starts tomorrow";
                       const d = Math.max(1, Math.floor((new Date(todayStr + "T12:00:00") - roundStartObj) / 86400000) + 1);
-                      if (d > 90) return "Day 90+ — ready to finish";
+                      if (routine === "sh90") return d > 90 ? "Day 90+ — ready to finish" : `Day ${d} of 90`;
+                      if (d > cycleLenDays) return "Rolling over...";
                       const ph = getRoundPhase(d);
-                      const phaseTag = ph.key === "deload" ? " · Deload" : ph.key === "deescalation" ? " · De-escalation" : ROUTINES[routine]?.weekday ? " · Build" : "";
-                      return `Day ${d} of 90${phaseTag}`;
+                      const tag = ph.key === "deescalation" ? "De-escalation" : `Build wk ${ph.week || 1}/${cycleBuildWeeks}`;
+                      return `Day ${d} of ${cycleLenDays} · ${tag}`;
                     })()} · {rounds.startDate > todayStr ? "starts" : "started"} {new Date(rounds.startDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {roundCompletedCount} workouts
                   </div>
                 </div>
               </div>
-              {rounds.history.slice().reverse().map(h => (
-                <div key={h.round} style={{
+
+              {/* Cycle controls (weekday routines) */}
+              {ROUTINES[routine]?.weekday && (
+                <div style={{ marginBottom: 10 }}>
+                  {/* Heavy-call / maintenance toggle */}
+                  <button onClick={() => {
+                      setRounds(prev => prev.maintenance
+                        ? { ...prev, maintenance: null }
+                        : { ...prev, maintenance: { since: todayStr } });
+                    }}
+                    style={{
+                      width: "100%", padding: "11px", borderRadius: 10, marginBottom: 8,
+                      border: `1px solid ${maintenanceOn ? t.success : t.border}`,
+                      background: maintenanceOn ? t.success + "15" : t.cardAlt,
+                      color: maintenanceOn ? t.success : t.text,
+                      fontSize: fs(13), fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                    }}>
+                    {maintenanceOn ? "🛡️ Maintenance ON — tap to resume the build" : "🛡️ Heavy call? Switch to maintenance"}
+                  </button>
+                  {maintenanceOn && (
+                    <div style={{ fontSize: fs(11), color: t.textDim, lineHeight: 1.5, marginBottom: 8, padding: "0 2px" }}>
+                      ~1/3 volume, loads stay heavy, 2 sessions/week holds your gains for weeks.
+                      Keep logging as normal — the cycle clock is paused and resumes exactly where it stopped.
+                    </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: fs(10), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Build length</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {[6, 7, 8].map(w => (
+                          <button key={w} onClick={() => setRounds(prev => ({ ...prev, buildWeeks: w }))}
+                            style={{
+                              flex: 1, padding: "8px 0", borderRadius: 8, cursor: "pointer",
+                              border: cycleBuildWeeks === w ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                              background: cycleBuildWeeks === w ? t.accentGlow : t.cardAlt,
+                              color: cycleBuildWeeks === w ? t.accent : t.textDim,
+                              fontSize: fs(12), fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                            }}>{w}w</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: fs(10), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>Emphasis</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {[{ k: "hypertrophy", l: "Muscle" }, { k: "strength", l: "Strength" }].map(o => (
+                          <button key={o.k} onClick={() => setRounds(prev => ({ ...prev, emphasis: o.k }))}
+                            style={{
+                              flex: 1, padding: "8px 0", borderRadius: 8, cursor: "pointer",
+                              border: (rounds.emphasis || "hypertrophy") === o.k ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                              background: (rounds.emphasis || "hypertrophy") === o.k ? t.accentGlow : t.cardAlt,
+                              color: (rounds.emphasis || "hypertrophy") === o.k ? t.accent : t.textDim,
+                              fontSize: fs(11), fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                            }}>{o.l}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 6, lineHeight: 1.5 }}>
+                    Run one strength block (heavier, 3-5 RIR, longer rests) every ~4-5 cycles — it rests connective
+                    tissue and raises the load ceiling for the next build. Cardio never pauses.
+                  </div>
+                </div>
+              )}
+
+              {rounds.history.slice().reverse().map((h, i) => (
+                <div key={`${h.round}-${i}`} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
                   borderRadius: 12, background: t.cardAlt, marginBottom: 6,
                 }}>
                   <div style={{ fontSize: fs(18) }}>🏆</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: fs(13), fontWeight: 600 }}>Round {h.round} — Complete</div>
+                    <div style={{ fontSize: fs(13), fontWeight: 600 }}>
+                      Cycle {h.round} — Complete{h.emphasis === "strength" ? " · Strength" : ""}
+                    </div>
                     <div style={{ fontSize: fs(11), color: t.textDim, fontFamily: "'DM Mono', monospace" }}>
                       {new Date(h.startDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} → {new Date(h.endDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })} · {h.workoutsCompleted} workouts
                     </div>
@@ -4452,7 +4585,7 @@ function SuperhumanApp() {
                   color: t.accent, fontSize: fs(13), fontWeight: 600, cursor: "pointer",
                   fontFamily: "inherit",
                 }}>
-                Finish Round {rounds.current} → Start Round {rounds.current + 1}
+                End Cycle {rounds.current} early → Start Cycle {rounds.current + 1}
               </button>
             </div>
 
@@ -4621,8 +4754,8 @@ function SuperhumanApp() {
                   a: "Every set has a target rep range and RIR (reps in reserve — how many reps you could still do). Double progression: when you hit the top of the range on ALL sets at the target RIR, add a little load next session and drop back to the bottom of the range. Deload every 6-8 weeks: one week at ~60-70% of your working loads and about half the sets. If a lift stalls for 2-3 sessions, deload that pattern. When call disrupts the week, switch to Full-Body 3× — don't try to make up missed split days.",
                 },
                 {
-                  q: "What are rounds?",
-                  a: "A round is one 90-day cycle that runs itself: Build (days 1-42) → Deload week (days 43-49, half sets at 60-70% loads) → Build (days 50-83) → De-escalation week (days 84-90). When day 90 passes, the app archives the round automatically and the next one starts at Day 1 — rebuild. On the old Superhuman 90 routine, rounds still finish manually via the button in the Me tab. All history is kept either way.",
+                  q: "What are training cycles?",
+                  a: "A cycle = a 6-8 week build plus one de-escalation week (7-9 weeks total, ~5-6 per year). The build ramps: start ~10 sets/muscle at 3 RIR (deliberately easy), add ~1 set/muscle/week while shaving RIR, peak at ~16-20 sets at 0-1 RIR. The final week cuts volume in half at 60-70% loads to dissipate fatigue — then the next cycle starts automatically and you rebuild from low volume with slightly heavier loads. That volume reset is the point. During heavy call, flip on Maintenance in the Me tab: ~1/3 volume at heavy loads holds your gains and pauses the cycle clock until you're back. Record estimated 1RMs and grip strength at each cycle boundary.",
                 },
                 {
                   q: "What do the colored dots on the calendar mean?",
@@ -4880,7 +5013,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.5
+              Superhuman 90 · v3.6
             </div>
           </div>
         )}
@@ -4937,7 +5070,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.5';
+    var APP_VERSION = 'v3.6';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern)
     if ('serviceWorker' in navigator) {

@@ -1,6 +1,6 @@
 // Bump this version string whenever you deploy new content.
 // The old cache will be deleted and everything re-fetched.
-const CACHE_VERSION = 'sh90-v11';
+const CACHE_VERSION = 'sh90-v12';
 
 const PRECACHE_URLS = [
   './',
