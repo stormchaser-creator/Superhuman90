@@ -491,7 +491,13 @@
       Object.entries(swapped).forEach(function(entry) {
         var keyParts = entry[0].split("-");
         if (keyParts.length >= 3) {
-          syncExerciseSwap(parseInt(keyParts[0]), parseInt(keyParts[1]), keyParts.slice(2).join("-"), entry[1]);
+          var w = parseInt(keyParts[0]);
+          if (isNaN(w)) {
+            // weekday-routine key: "<routine>-<day>-<Exercise Name>"
+            syncExerciseSwap(0, parseInt(keyParts[1]), keyParts[0] + ":" + keyParts.slice(2).join("-"), entry[1]);
+          } else {
+            syncExerciseSwap(w, parseInt(keyParts[1]), keyParts.slice(2).join("-"), entry[1]);
+          }
         }
       });
 
@@ -603,7 +609,15 @@
         if (swapRows && swapRows.length > 0) {
           const swapped = {};
           swapRows.forEach(function(r) {
-            swapped[r.week + "-" + r.day + "-" + r.original_exercise] = r.swapped_exercise;
+            // week 0 = weekday-routine swap, routine encoded as "routine:Exercise"
+            if (r.week === 0 && r.original_exercise.indexOf(":") > 0) {
+              var colon = r.original_exercise.indexOf(":");
+              var rk = r.original_exercise.slice(0, colon);
+              var exName = r.original_exercise.slice(colon + 1);
+              swapped[rk + "-" + r.day + "-" + exName] = r.swapped_exercise;
+            } else {
+              swapped[r.week + "-" + r.day + "-" + r.original_exercise] = r.swapped_exercise;
+            }
           });
           restored.swappedExercises = swapped;
         }
@@ -809,6 +823,60 @@ const ALTERNATIVES = {
   "Cable EZ Bar Upright Row": ["Dumbbell Upright Row", "Barbell Upright Row", "Cable Rope Upright Row", "H: Dumbbell Lateral Raise", "BW: Pike Push-up"],
   "Cable Behind The Back Wrist Curl": ["Barbell Wrist Curl", "Dumbbell Wrist Curl", "Plate Wrist Curl", "H: Dumbbell Hammer Curl", "BW: Fingertip Push-up"],
   "Reverse Pec Deck Rear Delt Fly": ["Face Pull", "Bent-Over Dumbbell Fly", "Cable Rear Delt Fly", "H: Bent-Over Dumbbell Rear Delt Fly", "BW: Prone Y-T-W Raise"],
+};
+
+// Alternatives for the Upper/Lower + Full-Body programs (v3.7) — the
+// "machine's taken, swap it" lists. Same format as above.
+Object.assign(ALTERNATIVES, {
+  "Weighted Pull-Up or Lat Pulldown": ["Lat Pulldown (any grip)", "Assisted Pull-Up Machine", "Chin-Up", "Single-Arm Lat Pulldown", "H: Weighted / Bodyweight Pullup", "BW: Pull-up / Door Pull-up"],
+  "Barbell or Dumbbell Bench Press": ["Machine Chest Press", "Smith Machine Bench Press", "Cable Chest Press", "Weighted Dip", "H: Feet On Bench Pushup (Weighted Vest)", "BW: Push-up (loaded backpack)"],
+  "Chest-Supported Row": ["Machine Row", "Seal Row", "Single-Arm Dumbbell Row", "T-Bar Row", "H: Dumbbell Row", "BW: Inverted Row"],
+  "Seated Dumbbell Shoulder Press": ["Machine Shoulder Press", "Barbell Overhead Press", "Arnold Press", "Landmine Press", "H: Dumbbell Shoulder Press", "BW: Pike Push-up"],
+  "Face Pull / External Rotation": ["Reverse Pec Deck", "Band Pull-Apart", "Cable External Rotation", "Bent-Over Rear Delt Fly", "H: Band Pull-Apart", "BW: Prone Y-T-W Raise"],
+  "Biceps Curl (any)": ["Dumbbell Curl", "EZ Bar Curl", "Cable Curl", "Hammer Curl", "H: Dumbbell Bicep Curl", "BW: Chin-up"],
+  "Triceps Extension (any)": ["Cable Pressdown", "Overhead Dumbbell Extension", "Skull Crusher", "Machine Dip", "H: Single-Arm Dumbbell Overhead Extension", "BW: Diamond Push-up"],
+  "Squat or Hack Squat": ["Leg Press", "Smith Machine Squat", "Goblet Squat", "Bulgarian Split Squat", "H: Goblet Squat", "BW: Deep Bodyweight Squat"],
+  "Romanian Deadlift": ["Dumbbell RDL", "45° Back Extension", "Cable Pull-Through", "Good Morning", "H: Dumbbell Romanian Deadlift", "BW: Single-Leg RDL"],
+  "Leg Press": ["Hack Squat", "Smith Machine Squat", "Goblet Squat", "Bulgarian Split Squat", "H: Bulgarian Split Squat", "BW: Wall Sit"],
+  "Leg Curl": ["Seated Leg Curl", "Lying Leg Curl", "Nordic Curl", "Swiss Ball Curl", "H: Dumbbell Romanian Deadlift", "BW: Sliding Leg Curl (towel)"],
+  "Farmer Carry": ["Trap-Bar Carry", "Dumbbell Farmer Carry", "Kettlebell Carry", "Heavy Dumbbell Hold (time)", "H: Dumbbell Farmer Carry", "BW: Dead Hang"],
+  "Hanging Leg Raise": ["Captain's Chair Leg Raise", "Cable Crunch", "Ab Rollout", "Decline Sit-Up", "H: Lying Leg Raise", "BW: Lying Leg Raise"],
+  "Incline Dumbbell Press": ["Incline Machine Press", "Incline Smith Press", "Low-Incline Barbell Press", "Incline Cable Press", "H: Feet On Bench Pushup (Weighted Vest)", "BW: Decline Push-up"],
+  "Machine or Cable Row": ["Chest-Supported Row", "Single-Arm Dumbbell Row", "T-Bar Row", "Seated Cable Row", "H: Dumbbell Row", "BW: Inverted Row"],
+  "Lat Pulldown": ["Pull-Up", "Assisted Pull-Up Machine", "Single-Arm Pulldown", "Straight-Arm Pulldown", "H: Weighted / Bodyweight Pullup", "BW: Pull-up"],
+  "Overhead or Machine Press": ["Seated Dumbbell Press", "Landmine Press", "Smith Machine Overhead Press", "Arnold Press", "H: Dumbbell Shoulder Press", "BW: Pike Push-up"],
+  "Rear Delt Fly / Cuff Work": ["Reverse Pec Deck", "Face Pull", "Bent-Over Dumbbell Fly", "Cable External Rotation", "H: Bent-Over Dumbbell Rear Delt Fly", "BW: Prone Y-T-W Raise"],
+  "Cable Pressdown": ["Rope Pressdown", "Overhead Cable Extension", "Dumbbell Kickback", "Skull Crusher", "H: Dumbbell Skullcrusher", "BW: Bench Dip"],
+  "Trap-Bar Deadlift or Hip Thrust": ["Barbell Hip Thrust", "Rack Pull", "Heavy Dumbbell RDL", "Loaded Glute Bridge", "H: Weighted / Bodyweight Hip Thrust", "BW: Single-Leg Glute Bridge"],
+  "Box Jump or Med-Ball Throw": ["Broad Jump", "Explosive Kettlebell Swing", "Jump Squat", "10-20 m Sprint", "H: Jump Squat", "BW: Jump Squat"],
+  "Walking Lunge": ["Reverse Lunge", "Bulgarian Split Squat", "Step-Up", "Split Squat", "H: Bulgarian Split Squat", "BW: Bodyweight Walking Lunge"],
+  "Suitcase Carry": ["Single-Arm Farmer Carry", "Waiter Carry", "Heavy Single Dumbbell Hold", "Side Plank (time)", "H: Single-Arm Dumbbell Carry", "BW: Side Plank"],
+});
+
+// Pattern fallback: any exercise WITHOUT an explicit entry above (Omar, PHAT,
+// custom swaps) still gets one-tap substitutes by movement pattern — the swap
+// feature must work for every exercise in every routine, gym-full-proof.
+const PATTERN_ALTS = [
+  { match: /pull-?up|pull ?down|chin/i, alts: ["Lat Pulldown", "Assisted Pull-Up Machine", "Chin-Up", "Single-Arm Pulldown"] },
+  { match: /row|shrug/i, alts: ["Cable Row", "Machine Row", "Single-Arm Dumbbell Row", "Chest-Supported Row"] },
+  { match: /bench|chest press|fly|flye|flyer|dip/i, alts: ["Machine Chest Press", "Dumbbell Bench Press", "Cable Fly", "Push-Up (loaded)"] },
+  { match: /shoulder|overhead|lateral|delt|upright|face pull/i, alts: ["Machine Shoulder Press", "Dumbbell Lateral Raise", "Cable Lateral Raise", "Reverse Pec Deck"] },
+  { match: /curl(?!.*leg)|biceps/i, alts: ["Dumbbell Curl", "EZ Bar Curl", "Cable Curl", "Hammer Curl"] },
+  { match: /tricep|pressdown|push ?down|skull|kickback|extension(?!s? *[·(]?.*leg)/i, alts: ["Cable Pressdown", "Overhead Dumbbell Extension", "Skull Crusher", "Bench Dip"] },
+  { match: /squat|leg press|lunge|step/i, alts: ["Leg Press", "Goblet Squat", "Hack Squat", "Bulgarian Split Squat"] },
+  { match: /deadlift|rdl|hinge|hip thrust|hip bridge|glute|hyperextension|good morning/i, alts: ["Romanian Deadlift", "Barbell Hip Thrust", "45° Back Extension", "Cable Pull-Through"] },
+  { match: /leg curl|hamstring|ham raise/i, alts: ["Seated Leg Curl", "Lying Leg Curl", "Nordic Curl", "Dumbbell RDL"] },
+  { match: /leg extension/i, alts: ["Leg Extension (machine)", "Sissy Squat", "Wall Sit", "Goblet Squat (slow)"] },
+  { match: /calf/i, alts: ["Standing Calf Raise", "Seated Calf Raise", "Leg Press Calf Raise", "Single-Leg Calf Raise"] },
+  { match: /carry|grip|hang/i, alts: ["Farmer Carry", "Suitcase Carry", "Dead Hang", "Heavy Dumbbell Hold"] },
+  { match: /ab|crunch|sit-?up|leg raise|plank|core/i, alts: ["Cable Crunch", "Hanging Leg Raise", "Ab Rollout", "Plank (weighted)"] },
+  { match: /jump|throw|swing|sprint|explosive/i, alts: ["Box Jump", "Med-Ball Throw", "Explosive Kettlebell Swing", "Jump Squat"] },
+  { match: /cardio|zone|interval|4x4|bike|row(er)?\b/i, alts: ["Bike", "Rower", "Incline Treadmill Walk", "Elliptical"] },
+];
+const getAlternatives = (name) => {
+  if (ALTERNATIVES[name]) return ALTERNATIVES[name];
+  const hit = PATTERN_ALTS.find(p => p.match.test(name));
+  return hit ? hit.alts : [];
 };
 
 // ── Workout Data (Weeks 1-12, all from spreadsheet) ──
@@ -1229,7 +1297,7 @@ function SuperhumanApp() {
         category: ticketForm.category,
         priority: ticketForm.priority,
         context_page: tab,
-        app_version: "v3.6",
+        app_version: "v3.7",
       });
       if (error) throw new Error(ticketsBackendMissing(error.message)
         ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
@@ -2234,7 +2302,10 @@ function SuperhumanApp() {
     const key = routine === "sh90" ? `${week}-${day}-${originalName}` : `${routine}-${day}-${originalName}`;
     setSwappedExercises(prev => ({ ...prev, [key]: newName }));
     setShowAlts(null);
+    // Weekday-routine swaps sync as week 0 with the routine encoded in the
+    // exercise name — the restore path decodes this back into the local key.
     if (routine === "sh90") syncExerciseSwap(week, day, originalName, newName);
+    else syncExerciseSwap(0, day, `${routine}:${originalName}`, newName);
   };
 
   return (
@@ -3121,7 +3192,10 @@ function SuperhumanApp() {
                       {/* Alternatives Panel */}
                       {showAlts === idx && (
                         <div style={{ marginTop: 8 }}>
-                          {(ALTERNATIVES[ex.name] || []).map((alt, ai) => (
+                          <div style={{ fontSize: fs(10), color: t.textDim, marginBottom: 6, fontFamily: "'DM Mono', monospace", letterSpacing: 1, textTransform: "uppercase" }}>
+                            Gym busy? Pick a substitute
+                          </div>
+                          {getAlternatives(ex.name).map((alt, ai) => (
                             <button key={ai} onClick={() => swapExercise(ex.name, alt)}
                               style={{
                                 display: "block", width: "100%", padding: "10px 12px",
@@ -3158,6 +3232,7 @@ function SuperhumanApp() {
                                 setSwappedExercises(prev => { const n = { ...prev }; delete n[key]; return n; });
                                 setShowAlts(null);
                                 if (routine === "sh90") deleteFromSupabase("exercise_swaps", { week: week, day: day, original_exercise: ex.name });
+                                else deleteFromSupabase("exercise_swaps", { week: 0, day: day, original_exercise: `${routine}:${ex.name}` });
                               }}
                               style={{
                                 marginTop: 6, width: "100%", padding: "8px", borderRadius: 8,
@@ -4767,7 +4842,7 @@ function SuperhumanApp() {
                 },
                 {
                   q: "How do I swap an exercise?",
-                  a: "In the Workout tab, expand any exercise and tap 'Swap Exercise' at the bottom. Choose from suggested alternatives or type a custom exercise name. Swaps are saved per week/day and you can revert anytime.",
+                  a: "In the Workout tab, expand any exercise and tap 'Swap Exercise' at the bottom. Every exercise in every routine gets one-tap substitutes (machine taken? pick the next one), or type a custom name. Swaps stick per day (per week on Superhuman 90), sync to the cloud, and you can revert anytime.",
                 },
                 {
                   q: "What does 'beat last week's reps or weight' mean?",
@@ -5013,7 +5088,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.6
+              Superhuman 90 · v3.7
             </div>
           </div>
         )}
@@ -5070,7 +5145,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.6';
+    var APP_VERSION = 'v3.7';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern)
     if ('serviceWorker' in navigator) {
