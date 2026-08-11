@@ -1111,26 +1111,45 @@ async function geminiGenerate(apiKey, body) {
   const chain = cached ? [cached, ...GEMINI_MODELS.filter(m => m !== cached)] : GEMINI_MODELS;
   let lastErr = null;
   for (const model of chain) {
-    const res = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(apiKey),
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-    );
-    if (res.ok) {
-      localStorage.setItem("sh90_geminiModel", model);
-      const result = await res.json();
-      let text = "";
-      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
-        result.candidates[0].content.parts.forEach(function(p) { if (p.text && !p.thought) text += p.text; });
+    // Config fields drift across model generations (Gemini 3 rejects the
+    // thinkingBudget field Gemini 2.5 needed) — try the body as given, then
+    // once more without thinkingConfig. The stripped attempt raises
+    // maxOutputTokens because these models spend output budget thinking.
+    const attempts = [body];
+    if (body.generationConfig && body.generationConfig.thinkingConfig) {
+      const gc = { ...body.generationConfig };
+      delete gc.thinkingConfig;
+      gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 4096);
+      attempts.push({ ...body, generationConfig: gc });
+    }
+    for (const attempt of attempts) {
+      let res;
+      try {
+        res = await fetch(
+          "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(apiKey),
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(attempt) }
+        );
+      } catch (e) {
+        throw new Error("Network error — check your connection");
       }
-      return { text: text, result: result, model: model };
+      if (res.ok) {
+        localStorage.setItem("sh90_geminiModel", model);
+        const result = await res.json();
+        let text = "";
+        if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+          (result.candidates[0].content.parts || []).forEach(function(p) { if (p.text && !p.thought) text += p.text; });
+        }
+        return { text: text, result: result, model: model };
+      }
+      const errBody = await res.text();
+      // A key problem fails identically on every model — surface it now
+      if (res.status === 401 || res.status === 403 || /api key not valid|api_key_invalid|key expired/i.test(errBody)) {
+        throw new Error("Gemini API key rejected (" + res.status + "). Check the key in Me → Food Tracker.");
+      }
+      lastErr = new Error("[" + model + "] " + res.status + ": " + errBody.slice(0, 200));
     }
-    const errBody = await res.text();
-    // Model retired/renamed → try the next one; anything else is a real error
-    if (res.status === 404 || /not (available|found|supported)/i.test(errBody)) {
-      lastErr = new Error("Model " + model + " unavailable");
-      continue;
-    }
-    throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
+    // Any other failure (retired model, config mismatch, per-model quota) →
+    // walk down the chain rather than giving up
   }
   throw lastErr || new Error("No Gemini model available");
 }
@@ -5446,7 +5465,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.8';
+    var APP_VERSION = 'v3.9';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
