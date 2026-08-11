@@ -1229,7 +1229,7 @@ function SuperhumanApp() {
         category: ticketForm.category,
         priority: ticketForm.priority,
         context_page: tab,
-        app_version: "v3.4",
+        app_version: "v3.5",
       });
       if (error) throw new Error(ticketsBackendMissing(error.message)
         ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
@@ -1675,6 +1675,48 @@ function SuperhumanApp() {
   const roundCompletedCount = Object.entries(sessionLog)
     .filter(([date, s]) => s.status === "completed" && date >= rounds.startDate).length;
 
+  // ── Round phase: build → deload (wk 7) → build → de-escalation (final week) ──
+  // The 6-8 week deload rule from the owner's evidence review, expressed inside
+  // the 90-day round: days 43-49 are the mid-round deload, days 84-90 the
+  // closing de-escalation. When day 90 passes, the round archives itself and
+  // the next one starts — build again (see the auto-rollover effect below).
+  const getRoundPhase = (d) => {
+    if (d >= 43 && d <= 49) return { key: "deload", label: "DELOAD WEEK", tip: "60-70% of working loads · about half the sets · stay 4+ RIR" };
+    if (d >= 84 && d <= 90) return { key: "deescalation", label: "DE-ESCALATION WEEK", tip: "Wind down: 60-70% loads, half volume. The next round starts automatically — then you rebuild." };
+    return { key: "build", label: "BUILD", tip: null };
+  };
+  const roundPhase = getRoundPhase(programDay);
+  // Reduced-volume rendering applies to weekday lifting routines only —
+  // SH90 has its own built-in week-12 deload, and yoga has nothing to halve.
+  const phaseReduced = !!ROUTINES[routine]?.weekday && roundPhase.key !== "build" && programDay > 0;
+
+  // Auto-rollover: the app itself recognizes the end of the de-escalation and
+  // starts the next round to build again. Rounds tile the calendar in exact
+  // 90-day windows; windows with zero workouts slide by without consuming a
+  // round number (a long break shouldn't mint empty trophies).
+  useEffect(() => {
+    if (routine === "sh90") return; // SH90 keeps the manual 68-workout trophy flow
+    const daysIn = Math.floor((new Date(todayStr + "T12:00:00") - new Date(rounds.startDate + "T12:00:00")) / 86400000) + 1;
+    if (daysIn <= 90) return;
+    setRounds(prev => {
+      let start = prev.startDate;
+      let current = prev.current;
+      const history = [...prev.history];
+      const dayCount = (ds) => Math.floor((new Date(todayStr + "T12:00:00") - new Date(ds + "T12:00:00")) / 86400000) + 1;
+      while (dayCount(start) > 90) {
+        const end = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + 89); return toLocalDateStr(d); })();
+        const next = (() => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + 90); return toLocalDateStr(d); })();
+        const done = Object.entries(sessionLog).filter(([date, s]) => s.status === "completed" && date >= start && date <= end).length;
+        if (done > 0) {
+          history.push({ round: current, startDate: start, endDate: end, workoutsCompleted: done });
+          current += 1;
+        }
+        start = next;
+      }
+      return { current, startDate: start, history };
+    });
+  }, [todayStr, routine]);
+
   const t = THEMES[theme];
   const weekData = routine === "sh90" ? (WORKOUT_DATA[week] || WORKOUT_DATA[5]) : null;
   // A logged session always dictates what its date shows, even if the active
@@ -1682,9 +1724,19 @@ function SuperhumanApp() {
   const _selSess = sessionLog[selectedDate];
   const _selSessRoutine = _selSess ? (_selSess.routine || "sh90") : null;
   const crossRoutineSession = !!_selSess && _selSessRoutine !== routine;
-  const dayData = crossRoutineSession
+  const dayDataRaw = crossRoutineSession
     ? getRoutineDayData(_selSessRoutine, _selSess.week, _selSess.day)
     : routine === "sh90" ? weekData?.[day] : getRoutineDayData(routine, week, day);
+  // During deload / de-escalation weeks, render the same movements at half the
+  // sets with the load guidance folded into the day description
+  const dayData = (phaseReduced && !crossRoutineSession && dayDataRaw && dayDataRaw.exercises.length > 0)
+    ? {
+        ...dayDataRaw,
+        label: `${dayDataRaw.label} · ${roundPhase.key === "deload" ? "DELOAD" : "DE-ESCALATION"}`,
+        desc: roundPhase.tip,
+        exercises: dayDataRaw.exercises.map(ex => ({ ...ex, sets: Math.max(1, Math.round(ex.sets / 2)) })),
+      }
+    : dayDataRaw;
   const exercises = dayData?.exercises || [];
   const isRestDay = routine !== "sh90" && routine !== "yoga" && exercises.length === 0;
   const programWeek = nextWorkoutPos.week;
@@ -1930,7 +1982,7 @@ function SuperhumanApp() {
       `Habit rates: ${habitSummary}.`,
       `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein (goal ${calorieGoal} cal).`,
       `Home recovery equipment available: HBOT chamber, red light panel, Neuronic photobiomodulation helmet, hydrogen inhalation, PowerPlate, free weights.`,
-      `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, deload every 6-8 weeks, hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
+      `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, deload every 6-8 weeks (the app runs this automatically inside each 90-day round: deload week on days 43-49, de-escalation on days 84-90, then the next round auto-starts), hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
       `The user may ask about training, recovery, habits, nutrition, or motivation. If asked for medical advice beyond general fitness, recommend consulting a professional. Keep answers under 200 words unless asked for detail.`,
     ].filter(Boolean).join("\n");
   };
@@ -2648,6 +2700,29 @@ function SuperhumanApp() {
                 );
               })}
             </div>
+            )}
+
+            {/* Round-phase banner (deload / de-escalation weeks) */}
+            {phaseReduced && !crossRoutineSession && (
+              <div style={{
+                padding: "10px 14px", borderRadius: 12, marginBottom: 12,
+                background: roundPhase.key === "deload" ? t.warning + "15" : t.accent + "12",
+                border: `1px solid ${roundPhase.key === "deload" ? t.warning : t.accent}40`,
+              }}>
+                <div style={{
+                  fontSize: fs(11), fontWeight: 700, letterSpacing: 1.5,
+                  fontFamily: "'DM Mono', monospace",
+                  color: roundPhase.key === "deload" ? t.warning : t.accent,
+                }}>
+                  {roundPhase.key === "deload" ? "🪫" : "🌊"} {roundPhase.label} · DAY {programDay} OF 90
+                </div>
+                <div style={{ fontSize: fs(11), color: t.textDim, marginTop: 3, lineHeight: 1.5 }}>
+                  {roundPhase.tip}
+                  {roundPhase.key === "deescalation" && (
+                    <> Round {rounds.current + 1} begins {(() => { const d = new Date(rounds.startDate + "T12:00:00"); d.setDate(d.getDate() + 90); return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); })()}.</>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* Day Header */}
@@ -4333,7 +4408,9 @@ function SuperhumanApp() {
             }}>
               <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>90-Day Rounds</div>
               <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
-                Each completed 90-day cycle is a round. Finish one, archive it, go again.
+                {routine === "sh90"
+                  ? "Each completed 90-day cycle is a round. Finish one, archive it, go again."
+                  : "Rounds run themselves: build → deload (week 7) → build → de-escalation (final week) → the next round starts automatically and you rebuild."}
               </div>
               <div style={{
                 display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
@@ -4346,7 +4423,10 @@ function SuperhumanApp() {
                     {(() => {
                       if (rounds.startDate > todayStr) return "Starts tomorrow";
                       const d = Math.max(1, Math.floor((new Date(todayStr + "T12:00:00") - roundStartObj) / 86400000) + 1);
-                      return d > 90 ? "Day 90+ — ready to finish" : `Day ${d} of 90`;
+                      if (d > 90) return "Day 90+ — ready to finish";
+                      const ph = getRoundPhase(d);
+                      const phaseTag = ph.key === "deload" ? " · Deload" : ph.key === "deescalation" ? " · De-escalation" : ROUTINES[routine]?.weekday ? " · Build" : "";
+                      return `Day ${d} of 90${phaseTag}`;
                     })()} · {rounds.startDate > todayStr ? "starts" : "started"} {new Date(rounds.startDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {roundCompletedCount} workouts
                   </div>
                 </div>
@@ -4542,7 +4622,7 @@ function SuperhumanApp() {
                 },
                 {
                   q: "What are rounds?",
-                  a: "A round is one full 90-day cycle. When you finish (or want to restart), use 'Finish Round → Start Round' in the Me tab: the completed round is archived with its stats, the program resets to Week 1 Day 1, and the day counter restarts at Day 1 of 90. All history is kept.",
+                  a: "A round is one 90-day cycle that runs itself: Build (days 1-42) → Deload week (days 43-49, half sets at 60-70% loads) → Build (days 50-83) → De-escalation week (days 84-90). When day 90 passes, the app archives the round automatically and the next one starts at Day 1 — rebuild. On the old Superhuman 90 routine, rounds still finish manually via the button in the Me tab. All history is kept either way.",
                 },
                 {
                   q: "What do the colored dots on the calendar mean?",
@@ -4800,7 +4880,7 @@ function SuperhumanApp() {
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.4
+              Superhuman 90 · v3.5
             </div>
           </div>
         )}
@@ -4857,7 +4937,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.4';
+    var APP_VERSION = 'v3.5';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern)
     if ('serviceWorker' in navigator) {
