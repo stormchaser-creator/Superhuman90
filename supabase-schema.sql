@@ -201,11 +201,11 @@ CREATE INDEX IF NOT EXISTS idx_workout_selection_user ON workout_selection(user_
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user   ON support_tickets(user_id);
 
 
--- ── OPTIONAL: nightly maintenance agent access ──────────────────────────────
+-- ── Nightly maintenance agent access (APPLIED to live DB 2026-08-11) ────────
 -- The cloud routine that triages tickets cannot use the plain anon key any
 -- more (it has no table access). These key-gated functions give it exactly
 -- three capabilities: list open tickets, update status, post a reply.
--- Run this block to enable it; skip it and the routine only health-checks.
+-- Applied via the Management API — kept here as the definition of record.
 CREATE OR REPLACE FUNCTION public.sh90_agent_tickets(p_agent_key TEXT)
 RETURNS SETOF support_tickets
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public

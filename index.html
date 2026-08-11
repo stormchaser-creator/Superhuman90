@@ -1101,6 +1101,40 @@ const getRoutineDayData = (routineKey, w, d) => {
 // ISO weekday for a YYYY-MM-DD date string: 1=Mon … 7=Sun
 const isoWeekday = (ds) => { const g = new Date(ds + "T12:00:00").getDay(); return g === 0 ? 7 : g; };
 
+// ── Gemini with model fallback ──
+// Google retires model ids without much warning (gemini-2.5-flash started
+// 404ing in Aug 2026 and broke food tracking). Try the newest first, walk
+// down the chain on model-not-found, remember what worked.
+const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-2.5-flash"];
+async function geminiGenerate(apiKey, body) {
+  const cached = localStorage.getItem("sh90_geminiModel");
+  const chain = cached ? [cached, ...GEMINI_MODELS.filter(m => m !== cached)] : GEMINI_MODELS;
+  let lastErr = null;
+  for (const model of chain) {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(apiKey),
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    if (res.ok) {
+      localStorage.setItem("sh90_geminiModel", model);
+      const result = await res.json();
+      let text = "";
+      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+        result.candidates[0].content.parts.forEach(function(p) { if (p.text && !p.thought) text += p.text; });
+      }
+      return { text: text, result: result, model: model };
+    }
+    const errBody = await res.text();
+    // Model retired/renamed → try the next one; anything else is a real error
+    if (res.status === 404 || /not (available|found|supported)/i.test(errBody)) {
+      lastErr = new Error("Model " + model + " unavailable");
+      continue;
+    }
+    throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
+  }
+  throw lastErr || new Error("No Gemini model available");
+}
+
 // ── Curated Yoga Library (YouTube) ──
 const YOGA_VIDEOS = [
   { id: "4pKly2JojMw", title: "10 min Morning Yoga Full Body Stretch", channel: "Yoga with Kassandra", duration: "10 min", category: "morning", level: "all" },
@@ -1258,6 +1292,43 @@ function SuperhumanApp() {
   const [ticketReply, setTicketReply] = useState("");
 
   const ticketsBackendMissing = (msg) => /does not exist|relation|schema cache/i.test(String(msg || ""));
+  // File-a-ticket bottom sheet, reachable from every tab via the 🛟 header
+  // button — same flow as CredentialDOMD's SupportModal
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  // Me tab is organized Credential-style: a settings menu with sub-pages
+  const [meSubPage, setMeSubPage] = useState(null);
+  useEffect(() => { if (tab !== "profile") setMeSubPage(null); }, [tab]);
+
+  // "Update ready" banner: the version checker throttles hard reloads; when it
+  // detects a newer deploy but can't reload yet, it raises this instead
+  const [updateReady, setUpdateReady] = useState(null);
+  useEffect(() => {
+    const onReady = (e) => setUpdateReady(e.detail?.version || "new version");
+    window.addEventListener("sh90-update-ready", onReady);
+    return () => window.removeEventListener("sh90-update-ready", onReady);
+  }, []);
+  const applyUpdate = () => {
+    const doReload = () => window.location.reload();
+    if ("caches" in window) {
+      caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(doReload);
+    } else doReload();
+  };
+
+  // Owner ticket management (Credential's AdminDashboard powers, single-user style)
+  const setTicketStatus = async (ticketId, status) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from("support_tickets")
+        .update({
+          status,
+          updated_at: new Date().toISOString(),
+          ...(status === "resolved" ? { resolved_at: new Date().toISOString() } : { resolved_at: null }),
+        })
+        .eq("id", ticketId);
+      if (error) throw new Error(error.message);
+      loadTickets();
+    } catch (e) { setTicketsError(e.message || "Failed to update ticket"); }
+  };
 
   const loadTickets = async () => {
     if (!supabase || !(await ensureDeviceAuth())) { setTicketsError("Not connected to backend."); return; }
@@ -1297,14 +1368,14 @@ function SuperhumanApp() {
         category: ticketForm.category,
         priority: ticketForm.priority,
         context_page: tab,
-        app_version: "v3.7",
+        app_version: "v3.8",
       });
       if (error) throw new Error(ticketsBackendMissing(error.message)
         ? "Ticket backend not set up yet — run the SQL migration in Supabase (see supabase-schema.sql)."
         : error.message);
       setTicketDone(true);
       setTicketForm({ category: "bug", priority: "normal", subject: "", body: "" });
-      setTimeout(() => { setTicketDone(false); setShowTicketForm(false); }, 1800);
+      setTimeout(() => { setTicketDone(false); setShowTicketForm(false); setShowTicketModal(false); }, 1800);
       loadTickets();
     } catch (e) { setTicketsError(e.message || "Failed to submit"); }
     setTicketSubmitting(false);
@@ -1746,6 +1817,44 @@ function SuperhumanApp() {
   const cycleLenDays = (cycleBuildWeeks + 1) * 7;             // build + de-escalation week
   const maintenanceOn = !!rounds.maintenance;
 
+  // Cycles began on 2026-08-10. History from before that (the original SH90
+  // round) must never be tiled into 49-day windows — when v3.6 shipped, the
+  // rollover did exactly that on the owner's device: it minted two phantom
+  // "cycles" out of the January-April program and left the clock at Cycle 3
+  // Day 9 instead of Cycle 2 Day 2 (tickets 002b08f0 + b19007ad). This repair
+  // collapses any pre-epoch entries into the single real Round 1 and restarts
+  // the current cycle at the epoch. Idempotent: after repair the condition
+  // can't match again.
+  const CYCLE_EPOCH = "2026-08-10";
+  useEffect(() => {
+    setRounds(prev => {
+      const preEpoch = prev.history.filter(h => h.endDate < CYCLE_EPOCH);
+      const needsRepair = preEpoch.length >= 2 || prev.startDate < CYCLE_EPOCH;
+      if (!needsRepair) return prev;
+      const completedDates = Object.entries(sessionLog)
+        .filter(([date, s]) => s.status === "completed" && date < CYCLE_EPOCH)
+        .map(([date]) => date).sort();
+      const postEpoch = prev.history.filter(h => h.endDate >= CYCLE_EPOCH);
+      const history = [];
+      if (completedDates.length > 0 || preEpoch.length > 0) {
+        history.push({
+          round: 1,
+          startDate: completedDates[0] || (preEpoch[0] && preEpoch[0].startDate) || CYCLE_EPOCH,
+          endDate: completedDates[completedDates.length - 1] || CYCLE_EPOCH,
+          workoutsCompleted: completedDates.length ||
+            preEpoch.reduce((s, h) => s + (h.workoutsCompleted || 0), 0),
+        });
+      }
+      postEpoch.forEach(h => history.push({ ...h, round: history.length + 1 }));
+      return {
+        ...prev,
+        current: history.length + 1,
+        startDate: prev.startDate < CYCLE_EPOCH ? CYCLE_EPOCH : prev.startDate,
+        history,
+      };
+    });
+  }, []);
+
   // Maintenance ("heavy call") pauses the cycle clock: every elapsed day while
   // it's on pushes startDate forward one day, so the build resumes exactly
   // where it stopped. Logging continues normally throughout.
@@ -1803,6 +1912,7 @@ function SuperhumanApp() {
   // maintenance mode is on.
   useEffect(() => {
     if (routine === "sh90" || rounds.maintenance) return; // SH90 keeps its manual trophy flow
+    if (rounds.startDate < CYCLE_EPOCH) return; // pre-cycle history is the repair effect's job, never the tiler's
     const len = ((rounds.buildWeeks || 6) + 1) * 7;
     const daysIn = Math.floor((new Date(todayStr + "T12:00:00") - new Date(rounds.startDate + "T12:00:00")) / 86400000) + 1;
     if (daysIn <= len) return;
@@ -1978,27 +2088,11 @@ function SuperhumanApp() {
         "Return ONLY valid JSON, NO markdown, NO explanation. " +
         'Structure: {"items":[{"name":"food","cal":number,"protein":number,"carbs":number,"fat":number,"serving":"amount"}],"cal":total,"protein":total,"carbs":total,"fat":total}. ' +
         "User input: " + foodText;
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
-        }),
+      const gem = await geminiGenerate(calorieApiKey, {
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
       });
-      if (!res.ok) {
-        var errBody = await res.text();
-        throw new Error("API error " + res.status + ": " + errBody.slice(0, 200));
-      }
-      var result = await res.json();
-      var responseText = "";
-      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
-        result.candidates[0].content.parts.forEach(function(p) {
-          if (p.text && !p.thought) responseText += p.text;
-        });
-      }
-      console.log("Gemini raw response:", JSON.stringify(result, null, 2));
-      console.log("Extracted responseText:", responseText);
+      var responseText = gem.text;
       // Extract JSON from response (strip any markdown fences if present)
       var jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Could not parse nutrition data. Raw: " + responseText.slice(0, 200));
@@ -2123,20 +2217,11 @@ function SuperhumanApp() {
         { role: "model", parts: [{ text: "Understood — I'm ready to coach." }] },
         ...history.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] })),
       ];
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(calorieApiKey), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } } }),
+      const gem = await geminiGenerate(calorieApiKey, {
+        contents,
+        generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
       });
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error("API error " + res.status + ": " + errBody.slice(0, 160));
-      }
-      const result = await res.json();
-      let responseText = "";
-      if (result.candidates && result.candidates[0] && result.candidates[0].content) {
-        result.candidates[0].content.parts.forEach(function(p) { if (p.text && !p.thought) responseText += p.text; });
-      }
+      const responseText = gem.text;
       if (!responseText) throw new Error("Empty response — try again");
       setCoachChat(prev => [...prev, { role: "model", text: responseText.trim() }]);
     } catch (e) {
@@ -2329,13 +2414,133 @@ function SuperhumanApp() {
               {headerSub}
             </div>
           </div>
-          {profile.name && (
-            <div style={{ fontSize: fs(13), color: t.textDim, fontWeight: 500 }}>
-              {profile.name.split(" ")[0]}
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {profile.name && (
+              <div style={{ fontSize: fs(13), color: t.textDim, fontWeight: 500 }}>
+                {profile.name.split(" ")[0]}
+              </div>
+            )}
+            <button onClick={() => { setShowTicketModal(true); setTicketsError(""); setTicketDone(false); }}
+              aria-label="Get help / file a ticket"
+              style={{
+                width: 32, height: 32, borderRadius: 10, border: `1px solid ${t.border}`,
+                background: t.card, fontSize: fs(15), cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              🛟
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Update-ready banner */}
+      {updateReady && (
+        <button onClick={applyUpdate} style={{
+          width: "100%", padding: "9px 16px", border: "none", cursor: "pointer",
+          background: t.gradient, color: "#fff", fontSize: fs(12), fontWeight: 700,
+          fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+          ⬆️ {updateReady} is ready — tap to update
+        </button>
+      )}
+
+      {/* File-a-ticket bottom sheet (available on every tab) */}
+      {showTicketModal && (
+        <div onClick={() => setShowTicketModal(false)} style={{
+          position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)",
+          display: "flex", alignItems: "flex-end", justifyContent: "center",
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            width: "100%", maxWidth: 430, maxHeight: "85vh", overflowY: "auto",
+            background: t.card, borderRadius: "20px 20px 0 0", padding: "16px 18px 28px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: t.border }} />
+            </div>
+            {ticketDone ? (
+              <div style={{ textAlign: "center", padding: "24px 0" }}>
+                <div style={{ fontSize: fs(32), marginBottom: 8 }}>✓</div>
+                <div style={{ fontSize: fs(15), fontWeight: 700, color: t.success }}>Ticket received.</div>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 4 }}>
+                  The nightly maintenance agent picks it up at 4 AM — track it in Me → Support & Tickets.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: fs(17), fontWeight: 700, marginBottom: 2 }}>Get help</div>
+                <div style={{ fontSize: fs(12), color: t.textDim, marginBottom: 14 }}>
+                  Bugs, wrong numbers, ideas — goes straight into the fix queue.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  <select value={ticketForm.category} onChange={e => setTicketForm(p => ({ ...p, category: e.target.value }))}
+                    style={{ padding: "10px 8px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none" }}>
+                    <option value="bug">Bug / broken</option>
+                    <option value="feature_request">Feature request</option>
+                    <option value="data_issue">Data issue</option>
+                    <option value="question">Question</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <select value={ticketForm.priority} onChange={e => setTicketForm(p => ({ ...p, priority: e.target.value }))}
+                    style={{ padding: "10px 8px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none" }}>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <input
+                  placeholder="Short summary"
+                  value={ticketForm.subject}
+                  maxLength={200}
+                  onChange={e => setTicketForm(p => ({ ...p, subject: e.target.value }))}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(14), fontFamily: "inherit",
+                    outline: "none", boxSizing: "border-box", marginBottom: 8,
+                  }}
+                />
+                <textarea
+                  placeholder="What happened / what you want changed..."
+                  value={ticketForm.body}
+                  onChange={e => setTicketForm(p => ({ ...p, body: e.target.value }))}
+                  rows={4}
+                  style={{
+                    width: "100%", padding: "12px", borderRadius: 10, border: `1px solid ${t.border}`,
+                    background: t.cardAlt, color: t.text, fontSize: fs(13), fontFamily: "inherit",
+                    resize: "vertical", outline: "none", lineHeight: 1.5, boxSizing: "border-box", marginBottom: 8,
+                  }}
+                />
+                {ticketsError && (
+                  <div style={{ padding: "8px 10px", borderRadius: 8, marginBottom: 8, background: t.danger + "15", color: t.danger, fontSize: fs(12), fontWeight: 600 }}>
+                    {ticketsError}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={submitTicket}
+                    disabled={ticketSubmitting || ticketForm.subject.trim().length < 3 || ticketForm.body.trim().length < 10}
+                    style={{
+                      flex: 1, padding: "12px", borderRadius: 10, border: "none",
+                      background: (ticketForm.subject.trim().length >= 3 && ticketForm.body.trim().length >= 10 && !ticketSubmitting) ? t.gradient : t.cardAlt,
+                      color: (ticketForm.subject.trim().length >= 3 && ticketForm.body.trim().length >= 10 && !ticketSubmitting) ? "#fff" : t.textMuted,
+                      fontSize: fs(14), fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                    }}>
+                    {ticketSubmitting ? "Sending..." : "Send Ticket"}
+                  </button>
+                  <button onClick={() => setShowTicketModal(false)}
+                    style={{
+                      padding: "12px 18px", borderRadius: 10, border: `1px solid ${t.border}`,
+                      background: "transparent", color: t.text, fontSize: fs(14), fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Date Navigator ── */}
       <div style={{
@@ -4352,6 +4557,7 @@ function SuperhumanApp() {
         {tab === "profile" && (
           <div style={{ padding: "16px 16px 0", overflowX: "hidden" }}>
 
+            {meSubPage === "profile" && (<>
             {/* ── Personal Info ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4402,6 +4608,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === null && (<>
             {/* ── Program Stats ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4439,6 +4647,60 @@ function SuperhumanApp() {
               </div>
             </div>
 
+
+            {/* ── Settings menu (Credential-style organization) ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, marginBottom: 12,
+              border: `1px solid ${t.border}`, overflow: "hidden",
+            }}>
+              {[
+                { key: "routine", icon: "🎯", label: "Workout Routine", sub: ROUTINES[routine].name },
+                { key: "cycles", icon: maintenanceOn ? "🛡️" : "🔄", label: "Training Cycles", sub: maintenanceOn ? `Cycle ${rounds.current} · paused` : `Cycle ${rounds.current}` },
+                { key: "mode", icon: "🏋️", label: "Workout Mode", sub: workoutMode === "gym" ? "Gym" : workoutMode === "home" ? "Home" : "Bodyweight" },
+                { key: "tickets", icon: "🛟", label: "Support & Tickets", sub: (() => { const n = (tickets || []).filter(tk => !["resolved", "closed"].includes(tk.status)).length; return n > 0 ? `${n} open` : "All clear"; })() },
+                { key: "profile", icon: "👤", label: "Personal Info", sub: profile.name || "Set up your profile" },
+                { key: "appearance", icon: "🎨", label: "Appearance", sub: THEMES[theme].name },
+                { key: "food", icon: "🍽️", label: "Food Tracker", sub: `${calorieGoal} cal goal` },
+                { key: "data", icon: "💾", label: "Data", sub: "Export · Reset" },
+                { key: "faq", icon: "❓", label: "FAQ", sub: "How everything works" },
+              ].map((row, i, arr) => (
+                <button key={row.key}
+                  onClick={() => setMeSubPage(row.key)}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 12,
+                    padding: "13px 16px", border: "none", cursor: "pointer",
+                    background: "transparent", fontFamily: "inherit", textAlign: "left",
+                    borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                  }}>
+                  <span style={{
+                    width: 32, height: 32, borderRadius: 9, background: t.cardAlt,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: fs(15), flexShrink: 0,
+                  }}>{row.icon}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: fs(14), fontWeight: 600, color: t.text }}>{row.label}</span>
+                    <span style={{ display: "block", fontSize: fs(11), color: t.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.sub}</span>
+                  </span>
+                  <span style={{ color: t.textMuted, fontSize: fs(13), flexShrink: 0 }}>›</span>
+                </button>
+              ))}
+            </div>
+            </>)}
+
+            {/* Sub-page back header */}
+            {meSubPage !== null && (
+              <button onClick={() => setMeSubPage(null)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
+                  padding: "8px 12px", borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: t.card, color: t.accent, fontSize: fs(13), fontWeight: 600,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                ‹ Me
+              </button>
+            )}
+
+            {meSubPage === "appearance" && (<>
             {/* ── Appearance ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4507,6 +4769,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === "routine" && (<>
             {/* ── Workout Routine ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4538,6 +4802,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === "cycles" && (<>
             {/* ── Training Cycles ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4664,6 +4930,8 @@ function SuperhumanApp() {
               </button>
             </div>
 
+            </>)}
+            {meSubPage === "mode" && (<>
             {/* ── Workout Mode ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4696,6 +4964,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === "food" && (<>
             {/* ── Food Tracker Settings ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4747,6 +5017,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === "data" && (<>
             {/* ── Data Management ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4805,6 +5077,8 @@ function SuperhumanApp() {
               </div>
             </div>
 
+            </>)}
+            {meSubPage === "faq" && (<>
             {/* ── FAQ ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4896,6 +5170,8 @@ function SuperhumanApp() {
               ))}
             </div>
 
+            </>)}
+            {meSubPage === "tickets" && (<>
             {/* ── Support & Tickets (CredentialDOMD pattern) ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -5050,6 +5326,28 @@ function SuperhumanApp() {
                                 {m.body}
                               </div>
                             ))}
+                            {/* Owner controls — resolve/reopen without waiting for the agent */}
+                            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                              {!["resolved", "closed"].includes(tk.status) ? (
+                                <button onClick={() => setTicketStatus(tk.id, "resolved")}
+                                  style={{
+                                    padding: "6px 12px", borderRadius: 8, border: `1px solid ${t.success}50`,
+                                    background: "transparent", color: t.success, fontSize: fs(11),
+                                    fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                                  }}>
+                                  ✓ Mark Resolved
+                                </button>
+                              ) : (
+                                <button onClick={() => setTicketStatus(tk.id, "open")}
+                                  style={{
+                                    padding: "6px 12px", borderRadius: 8, border: `1px solid ${t.border}`,
+                                    background: "transparent", color: t.textDim, fontSize: fs(11),
+                                    fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                                  }}>
+                                  Reopen
+                                </button>
+                              )}
+                            </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <input
                                 placeholder="Reply..."
@@ -5083,13 +5381,16 @@ function SuperhumanApp() {
               )}
             </div>
 
+            </>)}
+            {meSubPage === null && (<>
             {/* ── App Version ── */}
             <div style={{
               textAlign: "center", padding: "16px 0 8px",
               fontSize: fs(11), color: t.textMuted, fontFamily: "'DM Mono', monospace",
             }}>
-              Superhuman 90 · v3.7
+              Superhuman 90 · v3.8
             </div>
+            </>)}
           </div>
         )}
       </div>
@@ -5145,11 +5446,20 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.7';
+    var APP_VERSION = 'v3.8';
 
-    // Register service worker — force update on new deploys (CredentialDOMD pattern)
+    // Register service worker — force update on new deploys (CredentialDOMD pattern,
+    // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
+    // and controllerchange (the reliable signal that a new worker took over) drives
+    // the reload instead of per-worker statechange.
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').then(function(reg) {
+      var _reloadingForSW = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (_reloadingForSW) return;
+        _reloadingForSW = true;
+        window.location.reload();
+      });
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function(reg) {
         reg.update();
         // A new worker is already installed and waiting → activate it now
         if (reg.waiting) {
@@ -5161,9 +5471,6 @@ function SuperhumanApp() {
             newWorker.addEventListener('statechange', function() {
               if (newWorker.state === 'installed' && reg.waiting) {
                 reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-              }
-              if (newWorker.state === 'activated') {
-                window.location.reload();
               }
             });
           }
@@ -5188,9 +5495,14 @@ function SuperhumanApp() {
             remote = (remote || '').trim();
             // Sanity: only act on a real version string (a 404 page must not trigger reloads)
             if (!/^v[\d.]+$/.test(remote) || remote === APP_VERSION) return;
-            // Throttle: never force-reload more than once a minute (guards reload loops)
+            // Throttle: never force-reload more than once a minute (guards reload loops).
+            // When throttled, tell the app so it can show an "update ready" banner
+            // instead of silently doing nothing.
             var last = parseInt(sessionStorage.getItem('sh90_last_forced_reload') || '0', 10);
-            if (Date.now() - last < 60000) return;
+            if (Date.now() - last < 60000) {
+              window.dispatchEvent(new CustomEvent('sh90-update-ready', { detail: { version: remote } }));
+              return;
+            }
             sessionStorage.setItem('sh90_last_forced_reload', String(Date.now()));
             if ('caches' in window) {
               caches.keys().then(function(keys) {
@@ -5203,14 +5515,18 @@ function SuperhumanApp() {
           .catch(function() { checking = false; });
       }
       checkVersion();
-      document.addEventListener('visibilitychange', function() {
-        if (document.visibilityState === 'visible') {
-          checkVersion();
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistration().then(function(r) { if (r) r.update(); });
-          }
+      function resumeCheck() {
+        checkVersion();
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistration().then(function(r) { if (r) r.update(); });
         }
+      }
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') resumeCheck();
       });
+      // iOS resume from the back/forward cache doesn't always fire visibilitychange
+      window.addEventListener('pageshow', function(e) { if (e.persisted) resumeCheck(); });
+      window.addEventListener('focus', resumeCheck);
       setInterval(checkVersion, 15 * 60 * 1000);
     })();
   </script>
