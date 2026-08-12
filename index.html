@@ -253,6 +253,22 @@
       } catch (e) { console.warn("SH90: profile sync failed:", e); }
     };
 
+    // Report an API/app error to Supabase so failures can be diagnosed
+    // remotely (the nightly agent reads these via sh90_agent_errors) —
+    // the user should never have to describe an error message to anyone.
+    const reportAppError = async (area, message, detail) => {
+      try {
+        if (!supabase || !(await ensureDeviceAuth())) return;
+        await supabase.from("app_errors").insert({
+          device_id: DEVICE_ID,
+          version: typeof APP_VERSION !== "undefined" ? APP_VERSION : "?",
+          area: area,
+          message: String(message || "").slice(0, 500),
+          detail: detail || null,
+        });
+      } catch (e) { /* telemetry must never break the app */ }
+    };
+
     // Sync exercise log entry
     const syncExerciseLog = async (date, exerciseName, setIndex, entry) => {
       if (!supabase) return;
@@ -1110,6 +1126,8 @@ async function geminiGenerate(apiKey, body) {
   const cached = localStorage.getItem("sh90_geminiModel");
   const chain = cached ? [cached, ...GEMINI_MODELS.filter(m => m !== cached)] : GEMINI_MODELS;
   let lastErr = null;
+  const attemptLog = []; // {model, status, err} per request — attached to thrown errors for telemetry
+  const fail = (msg) => { const e = new Error(msg); e.attempts = attemptLog; return e; };
   for (const model of chain) {
     // Config fields drift across model generations (Gemini 3 rejects the
     // thinkingBudget field Gemini 2.5 needed) — try the body as given, then
@@ -1120,7 +1138,11 @@ async function geminiGenerate(apiKey, body) {
       const gc = { ...body.generationConfig };
       delete gc.thinkingConfig;
       gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 4096);
-      attempts.push({ ...body, generationConfig: gc });
+      const stripped = { ...body, generationConfig: gc };
+      // Remember which request shape worked last time so the common case
+      // is one request, not a known-failing one plus a retry
+      if (localStorage.getItem("sh90_geminiStrip") === "1") attempts.unshift(stripped);
+      else attempts.push(stripped);
     }
     for (const attempt of attempts) {
       let res;
@@ -1130,28 +1152,40 @@ async function geminiGenerate(apiKey, body) {
           { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(attempt) }
         );
       } catch (e) {
-        throw new Error("Network error — check your connection");
+        attemptLog.push({ model: model, status: 0, err: String(e && e.message || e).slice(0, 120) });
+        throw fail("Network error — check your connection");
       }
       if (res.ok) {
-        localStorage.setItem("sh90_geminiModel", model);
         const result = await res.json();
         let text = "";
         if (result.candidates && result.candidates[0] && result.candidates[0].content) {
           (result.candidates[0].content.parts || []).forEach(function(p) { if (p.text && !p.thought) text += p.text; });
         }
-        return { text: text, result: result, model: model };
+        if (text) {
+          localStorage.setItem("sh90_geminiModel", model);
+          localStorage.setItem("sh90_geminiStrip", attempt === body ? "0" : "1");
+          return { text: text, result: result, model: model };
+        }
+        // 200 with no usable text (thinking ate the token budget, safety
+        // block, …) — treat like a failed attempt and keep walking
+        const why = (result.candidates && result.candidates[0] && result.candidates[0].finishReason)
+          || (result.promptFeedback && result.promptFeedback.blockReason) || "no text";
+        attemptLog.push({ model: model, status: 200, err: "empty response (" + why + ")" });
+        lastErr = "[" + model + "] returned no text (" + why + ")";
+        continue;
       }
       const errBody = await res.text();
+      attemptLog.push({ model: model, status: res.status, err: errBody.slice(0, 200) });
       // A key problem fails identically on every model — surface it now
       if (res.status === 401 || res.status === 403 || /api key not valid|api_key_invalid|key expired/i.test(errBody)) {
-        throw new Error("Gemini API key rejected (" + res.status + "). Check the key in Me → Food Tracker.");
+        throw fail("Gemini API key rejected (" + res.status + "). Check the key in Me → Food Tracker.");
       }
-      lastErr = new Error("[" + model + "] " + res.status + ": " + errBody.slice(0, 200));
+      lastErr = "[" + model + "] " + res.status + ": " + errBody.slice(0, 200);
     }
     // Any other failure (retired model, config mismatch, per-model quota) →
     // walk down the chain rather than giving up
   }
-  throw lastErr || new Error("No Gemini model available");
+  throw fail(lastErr || "No Gemini model available");
 }
 
 // ── Curated Yoga Library (YouTube) ──
@@ -1324,6 +1358,8 @@ function SuperhumanApp() {
   useEffect(() => {
     const onReady = (e) => setUpdateReady(e.detail?.version || "new version");
     window.addEventListener("sh90-update-ready", onReady);
+    // Catch a signal raised at launch, before this listener existed
+    if (window.__sh90_pendingUpdate) setUpdateReady(window.__sh90_pendingUpdate);
     return () => window.removeEventListener("sh90-update-ready", onReady);
   }, []);
   const applyUpdate = () => {
@@ -2130,7 +2166,10 @@ function SuperhumanApp() {
       var totals = items.reduce(function(s, i) { return { cal: s.cal + i.cal, protein: s.protein + i.protein, carbs: s.carbs + i.carbs, fat: s.fat + i.fat }; }, { cal: 0, protein: 0, carbs: 0, fat: 0 });
       setFoodPending({ text: foodText, category: detected.category, items: items, cal: totals.cal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
       setFoodInput("");
-    } catch (e) { setFoodError(e.message || "Failed to estimate"); }
+    } catch (e) {
+      setFoodError(e.message || "Failed to estimate");
+      reportAppError("food", e.message, e.attempts ? { attempts: e.attempts } : null);
+    }
     setFoodLoading(false);
   };
   const addFoodEntry = () => {
@@ -2231,10 +2270,25 @@ function SuperhumanApp() {
     setCoachInput("");
     setCoachLoading(true);
     try {
+      // Gemini requires strict user/model alternation. An even-sized window
+      // over an odd-length history starts on a model turn (400 on every
+      // model), and a mid-request app kill can persist two user turns in a
+      // row — so trim to a user-first window and merge any same-role runs.
+      const recent = history.slice(-12);
+      while (recent.length && recent[0].role !== "user") recent.shift();
+      const turns = [];
+      recent.forEach(m => {
+        const role = m.role === "user" ? "user" : "model";
+        if (turns.length && turns[turns.length - 1].role === role) {
+          turns[turns.length - 1].parts[0].text += "\n\n" + m.text;
+        } else {
+          turns.push({ role, parts: [{ text: m.text }] });
+        }
+      });
       const contents = [
         { role: "user", parts: [{ text: buildCoachContext() }] },
         { role: "model", parts: [{ text: "Understood — I'm ready to coach." }] },
-        ...history.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] })),
+        ...turns,
       ];
       const gem = await geminiGenerate(calorieApiKey, {
         contents,
@@ -2247,6 +2301,7 @@ function SuperhumanApp() {
       setCoachError(e.message || "Coach unavailable");
       setCoachChat(prev => prev.filter((m, i) => !(i === prev.length - 1 && m.role === "user" && m.text === msg)));
       setCoachInput(msg);
+      reportAppError("coach", e.message, e.attempts ? { attempts: e.attempts } : null);
     }
     setCoachLoading(false);
   };
@@ -5465,7 +5520,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.9';
+    var APP_VERSION = 'v3.10';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
@@ -5519,6 +5574,9 @@ function SuperhumanApp() {
             // instead of silently doing nothing.
             var last = parseInt(sessionStorage.getItem('sh90_last_forced_reload') || '0', 10);
             if (Date.now() - last < 60000) {
+              // Buffer too: at launch this fires while Babel is still
+              // compiling the app, before any React listener exists
+              window.__sh90_pendingUpdate = remote;
               window.dispatchEvent(new CustomEvent('sh90-update-ready', { detail: { version: remote } }));
               return;
             }

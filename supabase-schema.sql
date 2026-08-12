@@ -250,3 +250,31 @@ BEGIN
   RETURN true;
 END;
 $fn$;
+
+-- ── App error telemetry (APPLIED to live DB 2026-08-11) ─────────────────────
+-- Client reports API failures (food/coach Gemini errors) here automatically so
+-- they can be diagnosed remotely — the user never has to describe an error.
+CREATE TABLE IF NOT EXISTS app_errors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id TEXT NOT NULL,
+  user_id UUID DEFAULT auth.uid(),
+  version TEXT,
+  area TEXT,           -- 'food' | 'coach' | ...
+  message TEXT,        -- the user-visible error message
+  detail JSONB,        -- {attempts: [{model, status, err}]} from geminiGenerate
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE app_errors ENABLE ROW LEVEL SECURITY;
+CREATE POLICY app_errors_insert ON app_errors FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY app_errors_select ON app_errors FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- Nightly agent reads recent errors (same key as the other sh90_agent_* RPCs)
+CREATE OR REPLACE FUNCTION sh90_agent_errors(p_agent_key TEXT, p_days INT DEFAULT 7)
+RETURNS SETOF app_errors LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT * FROM app_errors
+  WHERE p_agent_key = '9366f4e2-11d2-47fe-9bd7-f16c11190da9-c360c355'
+    AND created_at > now() - make_interval(days => GREATEST(p_days, 1))
+  ORDER BY created_at DESC LIMIT 200;
+$$;
+REVOKE ALL ON FUNCTION sh90_agent_errors(TEXT, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sh90_agent_errors(TEXT, INT) TO anon, authenticated;
