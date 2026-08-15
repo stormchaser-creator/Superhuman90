@@ -2142,6 +2142,50 @@ function SuperhumanApp() {
         ? `${ROUTINES[routine].name} · Cycle ${rounds.current} · 🛡️ Maintenance`
         : `${ROUTINES[routine].name} · Cycle ${rounds.current}`;
 
+  // Double progression (ticket "Modify"): each next workout of the same type
+  // adjusts from the last log. Hold the load until the top of the rep range
+  // is hit on every set, then suggest ~+5%; otherwise say what to repeat.
+  const getProgressionTip = (dn, ex) => {
+    const repsStr = String(ex.reps || "").split("@")[0]; // strip "@ 1-3 RIR" so the RIR range isn't parsed as reps
+    if (/min|sec|\ds\b|m\/|\bm\b|lap|hold|hrmax|speed|max/i.test(repsStr)) return null; // duration/distance work
+    const range = repsStr.match(/(\d+)\s*-\s*(\d+)/);
+    const single = repsStr.match(/(\d+)/);
+    if (!range && !single) return null;
+    const bottom = range ? parseInt(range[1]) : parseInt(single[1]);
+    const top = range ? parseInt(range[2]) : parseInt(single[1]);
+    // Most recent prior day with logged sets for this exercise
+    const prior = {};
+    Object.entries(logData).forEach(([key, v]) => {
+      if (!key.includes(`-${dn}-`)) return;
+      const date = key.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= selectedDate) return;
+      (prior[date] = prior[date] || []).push(v);
+    });
+    const dates = Object.keys(prior).sort();
+    if (!dates.length) return null;
+    const lastDate = dates[dates.length - 1];
+    const last = prior[lastDate].filter(s => s && s.done);
+    if (!last.length) return null;
+    const weights = last.map(s => parseFloat(s.weight)).filter(n => !isNaN(n) && n > 0);
+    const reps = last.map(s => parseInt(s.reps)).filter(n => !isNaN(n) && n > 0);
+    if (!reps.length) return null;
+    const w = weights.length ? Math.max(...weights) : null;
+    const when = new Date(lastDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    if (reps.every(r => r >= top)) {
+      if (w) {
+        let next = Math.round((w * 1.05) / 2.5) * 2.5;
+        if (next <= w) next = w + 2.5;
+        return { icon: "⬆", text: `${when}: ${w} lbs, all sets hit ${top}+ — go ${next} lbs today`, up: true };
+      }
+      return { icon: "⬆", text: `${when}: hit ${top}+ everywhere — add reps or a harder variation`, up: true };
+    }
+    if (w) {
+      if (reps.some(r => r < bottom)) return { icon: "→", text: `${when}: ${w} lbs — stay there and build to ${bottom}-${top} reps`, up: false };
+      return { icon: "→", text: `${when}: ${w} lbs — repeat it, aim for ${top} on every set`, up: false };
+    }
+    return null;
+  };
+
   const getPrevWeekResult = (exName) => {
     const sorted = Object.entries(logData)
       .filter(([key]) => key.includes(`-${exName}-`) && !key.startsWith(selectedDate))
@@ -2865,7 +2909,10 @@ function SuperhumanApp() {
 
               // CASE 1: Completed session
               if (selectedSession?.status === "completed") {
-                const compExercises = sessRoutine === "yoga" ? [] : (getRoutineDayData(sessRoutine, selectedSession.week, selectedSession.day)?.exercises || []);
+                // Count against the phase-scaled prescription (dayData) — the raw
+                // day data demands sets the UI never showed during EASY START /
+                // de-escalation, which read completed workouts as incomplete
+                const compExercises = sessRoutine === "yoga" ? [] : (dayData?.exercises || []);
                 let compTotal = compExercises.length, compDone = 0;
                 compExercises.forEach(ex => {
                   const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name, sessRoutine);
@@ -2953,8 +3000,9 @@ function SuperhumanApp() {
               }
               // CASE 2: Active session (in progress)
               if (selectedSession?.status === "active") {
-                // Calculate workout completion %
-                const sessionExercises = getRoutineDayData(sessRoutine, selectedSession.week, selectedSession.day)?.exercises || [];
+                // Calculate workout completion % — against the phase-scaled
+                // prescription (see completed-banner note above)
+                const sessionExercises = dayData?.exercises || [];
                 let totalEx = sessionExercises.length, doneEx = 0;
                 sessionExercises.forEach(ex => {
                   const dn = resolveDisplay(selectedSession.week, selectedSession.day, ex.name, sessRoutine);
@@ -3452,6 +3500,23 @@ function SuperhumanApp() {
                           Last: <span style={{ color: t.text, fontWeight: 600 }}>{prevResult}</span>
                         </div>
                       )}
+
+                      {/* Progression suggestion from the last log (double progression) */}
+                      {(() => {
+                        const tip = getProgressionTip(currentDisplay, ex);
+                        if (!tip) return null;
+                        return (
+                          <div style={{
+                            marginTop: 10, padding: "8px 12px", borderRadius: 10,
+                            background: tip.up ? t.success + "14" : t.accentGlow,
+                            border: `1px solid ${tip.up ? t.success + "40" : t.accent + "30"}`,
+                            fontSize: fs(12), lineHeight: 1.4,
+                            color: tip.up ? t.success : t.accent, fontWeight: 500,
+                          }}>
+                            {tip.icon} {tip.text}
+                          </div>
+                        );
+                      })()}
 
                       {/* Set Logging */}
                       <div style={{ marginTop: 10 }}>
@@ -5658,7 +5723,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.11';
+    var APP_VERSION = 'v3.12';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
