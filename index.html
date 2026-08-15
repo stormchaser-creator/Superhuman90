@@ -1096,6 +1096,99 @@ const FULLBODY_DATA = {
   7:{label:"REST",desc:"Full rest — sleep 7-9 h.",exercises:[]},
 };
 
+// ── Buff TXN — teen-beginner 7-day program (weekday-based: 1=Mon … 7=Sun) ──
+// Built from the AAP 2020 / 2014 International Consensus / NSCA youth guidance:
+// 3 full-body technique-first lifting days (RPE 6-8, double progression),
+// conditioning + sport/plyo + genuine recovery days. The equipment tier follows
+// the existing Workout Mode setting (gym / home dumbbells+bands / bodyweight).
+// Labels and descs are IDENTICAL across tiers so logged history reads the same
+// after a tier switch — only the exercises differ. Days 2/4/6/7 are shared.
+const BUFFTXN_SHARED = {
+  2:{label:"CONDITIONING · CORE",desc:"Warm up first · easy-moderate cardio or short intervals, then core · quality over fatigue",exercises:[
+    {name:"Cardio (bike / jog / swim / sport)",sets:1,reps:"20-40 min easy",result:null,notes:"Zone 2 — you can hold a conversation"},
+    {name:"Optional Intervals",sets:1,reps:"6-8 × 20-30s hard / 90s easy",result:null,notes:"Max 1-2×/week · skip if legs are sore"},
+    {name:"Plank",sets:3,reps:"20-40s",result:null,notes:"Core · brace like someone will poke your belly"},
+    {name:"Dead Bug",sets:3,reps:"8-12",result:null,notes:"Core · low back stays on the floor"}]},
+  4:{label:"ACTIVE RECOVERY · MOBILITY",desc:"Genuinely easy — walk, easy bike, stretch, play · this is where you grow",exercises:[
+    {name:"Easy Walk or Bike",sets:1,reps:"20-30 min",result:null,notes:"Easy pace — this is not a workout"},
+    {name:"Mobility Flow",sets:1,reps:"10-15 min",result:null,notes:"Hips, ankles, shoulders, spine"}]},
+  6:{label:"SPORT · SPRINTS · JUMPS",desc:"Play a sport, sprint short, jump a little · stop while it still feels good",exercises:[
+    {name:"Sport / Free Play",sets:1,reps:"30-60 min",result:null,notes:"Basketball, soccer, swimming — anything fun"},
+    {name:"Sprints",sets:6,reps:"10-30 m",result:null,notes:"Walk back slowly — full recovery each time"},
+    {name:"Jumps (pogo / broad / low box)",sets:3,reps:"5",result:null,notes:"Land soft and quiet · quality only"}]},
+  7:{label:"REST",desc:"Full rest day — growth happens while you sleep. Aim for 9-10 hours tonight.",exercises:[]},
+};
+const BUFFTXN_LIFT_DESC = "Warm up 8-10 min first · leave 2-4 reps in the tank every set · add weight only when you hit the top reps on ALL sets with clean form";
+const BUFFTXN_DATA = {
+  gym: { ...BUFFTXN_SHARED,
+    1:{label:"FULL A · SQUAT FOCUS",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Goblet or Barbell Back Squat",sets:3,reps:"6-10",result:null,notes:"Squat · technique first — ask for a spot on barbell"},
+      {name:"Dumbbell Bench Press",sets:3,reps:"6-10",result:null,notes:"Push"},
+      {name:"Lat Pulldown or Assisted Pull-Up",sets:3,reps:"8-12",result:null,notes:"Pull"},
+      {name:"Romanian Deadlift (light)",sets:2,reps:"8-10",result:null,notes:"Hinge · feel the hamstrings, flat back"},
+      {name:"Plank",sets:3,reps:"20-40s",result:null,notes:"Core"},
+      {name:"Farmer Carry",sets:2,reps:"20-30 m",result:null,notes:"Tall posture, no leaning"}]},
+    3:{label:"FULL B · HINGE & PULL",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Trap-Bar or Romanian Deadlift",sets:3,reps:"6-10",result:null,notes:"Hinge · flat back, push the floor away"},
+      {name:"Dumbbell Shoulder Press",sets:3,reps:"8-12",result:null,notes:"Push"},
+      {name:"Seated Cable Row",sets:3,reps:"8-12",result:null,notes:"Pull · squeeze shoulder blades"},
+      {name:"Leg Press or Split Squat",sets:2,reps:"8-12",result:null,notes:"Squat"},
+      {name:"Pallof Press",sets:3,reps:"10/side",result:null,notes:"Core · resist the twist"},
+      {name:"Hanging Knee Raise or Dead Bug",sets:3,reps:"8-12",result:null,notes:"Core"}]},
+    5:{label:"FULL C · PUSH & CARRY",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Front Squat or Leg Press",sets:3,reps:"6-10",result:null,notes:"Squat"},
+      {name:"Incline Dumbbell Press or Push-Up",sets:3,reps:"8-12",result:null,notes:"Push"},
+      {name:"One-Arm Dumbbell Row",sets:3,reps:"8-12/side",result:null,notes:"Pull"},
+      {name:"Dumbbell Walking Lunge",sets:2,reps:"8-10/leg",result:null,notes:"Legs"},
+      {name:"Face Pull or Band Pull-Apart",sets:3,reps:"12-15",result:null,notes:"Shoulder health"},
+      {name:"Suitcase Carry",sets:2,reps:"20-30 m/side",result:null,notes:"Stay tall — don't lean"}]},
+  },
+  home: { ...BUFFTXN_SHARED,
+    1:{label:"FULL A · SQUAT FOCUS",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Goblet Squat (DB)",sets:3,reps:"8-12",result:null,notes:"Squat · chest up, heels down"},
+      {name:"DB Floor Press or Push-Up",sets:3,reps:"8-12",result:null,notes:"Push"},
+      {name:"Band Row or Band Lat Pulldown",sets:3,reps:"10-15",result:null,notes:"Pull"},
+      {name:"DB Romanian Deadlift",sets:2,reps:"8-12",result:null,notes:"Hinge · flat back"},
+      {name:"Plank",sets:3,reps:"20-40s",result:null,notes:"Core"},
+      {name:"DB Farmer Carry",sets:2,reps:"30s",result:null,notes:"Tall posture"}]},
+    3:{label:"FULL B · HINGE & PULL",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"DB Reverse Lunge",sets:3,reps:"8-10/leg",result:null,notes:"Legs · knee tracks over toes"},
+      {name:"DB Overhead Press",sets:3,reps:"8-12",result:null,notes:"Push · ribs down, no back arch"},
+      {name:"One-Arm DB Row",sets:3,reps:"8-12/side",result:null,notes:"Pull"},
+      {name:"Band Good Morning",sets:2,reps:"12-15",result:null,notes:"Hinge"},
+      {name:"Pallof Press (Band)",sets:3,reps:"10/side",result:null,notes:"Core · resist the twist"},
+      {name:"Dead Bug",sets:3,reps:"8-12",result:null,notes:"Core"}]},
+    5:{label:"FULL C · PUSH & CARRY",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"DB or Band Squat (slow tempo)",sets:3,reps:"10-12",result:null,notes:"Squat · 3s down, drive up"},
+      {name:"Incline or Decline Push-Up",sets:3,reps:"8-12",result:null,notes:"Push · harder angle when 12 is easy"},
+      {name:"Band Pull-Apart + Face Pull",sets:3,reps:"12-15",result:null,notes:"Shoulder health"},
+      {name:"DB Single-Leg RDL",sets:2,reps:"8-10/leg",result:null,notes:"Hinge + balance"},
+      {name:"Side Plank",sets:3,reps:"20-30s/side",result:null,notes:"Core"},
+      {name:"Suitcase Carry (DB)",sets:2,reps:"30s/side",result:null,notes:"Stay tall"}]},
+  },
+  bodyweight: { ...BUFFTXN_SHARED,
+    1:{label:"FULL A · SQUAT FOCUS",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Bodyweight Squat",sets:3,reps:"10-15",result:null,notes:"Squat · progress toward skater squat"},
+      {name:"Push-Up Progression",sets:3,reps:"6-12",result:null,notes:"Push · incline → full → decline"},
+      {name:"Inverted Row (table or bar)",sets:3,reps:"8-12",result:null,notes:"Pull · sturdy surface only"},
+      {name:"Single-Leg Glute Bridge",sets:3,reps:"10-12/side",result:null,notes:"Hinge"},
+      {name:"Plank",sets:3,reps:"20-45s",result:null,notes:"Core"}]},
+    3:{label:"FULL B · HINGE & PULL",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Reverse Lunge or Split Squat",sets:3,reps:"8-12/leg",result:null,notes:"Legs"},
+      {name:"Pike Push-Up",sets:3,reps:"6-10",result:null,notes:"Shoulders · hips high"},
+      {name:"Chin-Up (assisted OK)",sets:3,reps:"max, cap at 8",result:null,notes:"Pull · band or feet-assisted"},
+      {name:"Single-Leg RDL",sets:2,reps:"6-10/leg",result:null,notes:"Hinge + balance"},
+      {name:"Hollow-Body Hold",sets:3,reps:"15-30s",result:null,notes:"Core"}]},
+    5:{label:"FULL C · PUSH & CARRY",desc:BUFFTXN_LIFT_DESC,exercises:[
+      {name:"Bulgarian Split Squat (chair)",sets:3,reps:"8-12/leg",result:null,notes:"Legs · rear foot on a chair"},
+      {name:"Push-Up Variation (tempo)",sets:3,reps:"6-12",result:null,notes:"Push · 3s down, or archer push-up"},
+      {name:"Inverted Row (feet elevated)",sets:3,reps:"8-12",result:null,notes:"Pull"},
+      {name:"Wall Sit",sets:3,reps:"30-45s",result:null,notes:"Legs"},
+      {name:"Side Plank + Hip Lift",sets:3,reps:"8-12/side",result:null,notes:"Core"},
+      {name:"Bear Crawl",sets:2,reps:"20-30 m",result:null,notes:"Full body · knees an inch off the floor"}]},
+  },
+};
+
 // ── Routine Registry ──
 // `weekday: true` = the calendar weekday picks the workout (vs SH90's rolling schedule)
 const ROUTINES = {
@@ -1104,6 +1197,7 @@ const ROUTINES = {
   sh90: { name: "Superhuman 90", icon: "🦸", desc: "12-week program · 6-day rolling split" },
   omar: { name: "Omar Monthly", icon: "📅", desc: "Legacy · converted to RIR, see Upper/Lower", weekday: true },
   phat: { name: "PHAT", icon: "⚡", desc: "Layne Norton · consider skipping the 6×3 speed sets", weekday: true },
+  bufftxn: { name: "Buff TXN", icon: "🐂", desc: "Teen beginner · 3 lifting days + sport, technique first", weekday: true, noCycle: true },
   yoga: { name: "Yoga", icon: "🧘", desc: "YouTube-guided sessions" },
 };
 const getRoutineDayData = (routineKey, w, d) => {
@@ -1111,6 +1205,11 @@ const getRoutineDayData = (routineKey, w, d) => {
   if (routineKey === "fullbody") return FULLBODY_DATA[d] || null;
   if (routineKey === "omar") return OMAR_DATA[d] || null;
   if (routineKey === "phat") return PHAT_DATA[d] || null;
+  if (routineKey === "bufftxn") {
+    // Equipment tier follows the Workout Mode setting (gym / home / bodyweight)
+    const tier = loadState("workoutMode", "gym");
+    return (BUFFTXN_DATA[tier] || BUFFTXN_DATA.gym)[d] || null;
+  }
   if (routineKey === "yoga") return null;
   return WORKOUT_DATA[w]?.[d] || null;
 };
@@ -1926,6 +2025,14 @@ function SuperhumanApp() {
     });
   }, [todayStr, rounds.maintenance]);
 
+  // No-cycle routines hide every maintenance control, so a maintenance flag
+  // carried over from a cycle routine would be a trap with no exit — clear it
+  useEffect(() => {
+    if (ROUTINES[routine]?.noCycle && rounds.maintenance) {
+      setRounds(prev => ({ ...prev, maintenance: null }));
+    }
+  }, [routine]);
+
   const roundStartObj = new Date(rounds.startDate + "T12:00:00");
   const programDay = Math.floor((selectedDateObj - roundStartObj) / (1000 * 60 * 60 * 24)) + 1;
   // Sessions completed in the current cycle (any routine)
@@ -1958,7 +2065,7 @@ function SuperhumanApp() {
   const roundPhase = getRoundPhase(programDay);
   // Volume-adjusted rendering applies to weekday lifting routines only —
   // SH90 has its own built-in week-12 deload, and yoga has nothing to scale.
-  const phaseReduced = !!ROUTINES[routine]?.weekday && programDay > 0 &&
+  const phaseReduced = !!ROUTINES[routine]?.weekday && !ROUTINES[routine]?.noCycle && programDay > 0 &&
     (roundPhase.key !== "build" || (roundPhase.week || 9) <= Math.ceil(cycleBuildWeeks / 3));
 
   // Auto-rollover: at the end of the de-escalation the app starts the next
@@ -1967,6 +2074,7 @@ function SuperhumanApp() {
   // maintenance mode is on.
   useEffect(() => {
     if (routine === "sh90" || rounds.maintenance) return; // SH90 keeps its manual trophy flow
+    if (ROUTINES[routine]?.noCycle) return; // teen program has no cycles to roll
     if (rounds.startDate < CYCLE_EPOCH) return; // pre-cycle history is the repair effect's job, never the tiler's
     const len = ((rounds.buildWeeks || 6) + 1) * 7;
     const daysIn = Math.floor((new Date(todayStr + "T12:00:00") - new Date(rounds.startDate + "T12:00:00")) / 86400000) + 1;
@@ -2028,9 +2136,11 @@ function SuperhumanApp() {
   const phaseWeeks = programWeek <= 4 ? "Wk 1-4" : programWeek <= 8 ? "Wk 5-8" : "Wk 9-12";
   const headerSub = routine === "sh90"
     ? `${phaseLabel} · ${phaseWeeks} · Round ${rounds.current}`
-    : maintenanceOn
-      ? `${ROUTINES[routine].name} · Cycle ${rounds.current} · 🛡️ Maintenance`
-      : `${ROUTINES[routine].name} · Cycle ${rounds.current}`;
+    : ROUTINES[routine]?.noCycle
+      ? `${ROUTINES[routine].name} · Strength + Skill`
+      : maintenanceOn
+        ? `${ROUTINES[routine].name} · Cycle ${rounds.current} · 🛡️ Maintenance`
+        : `${ROUTINES[routine].name} · Cycle ${rounds.current}`;
 
   const getPrevWeekResult = (exName) => {
     const sorted = Object.entries(logData)
@@ -2245,17 +2355,23 @@ function SuperhumanApp() {
     const todayData = getRoutineDayData(routine, week, day);
     return [
       `You are the in-app AI coach for Superhuman90, a 90-day fitness and habit app. Be concise, direct, encouraging, and practical — like a knowledgeable training partner. Use short paragraphs or tight bullet lists. No markdown headers.`,
-      `User: ${profile.name || "athlete"}${profile.age ? `, age ${profile.age}` : ""}${profile.height ? `, ${profile.height}` : ""}${profile.goalWeight ? `, goal weight ${profile.goalWeight} lbs` : ""}.`,
+      `User: ${profile.name || "athlete"}${profile.age ? `, age ${profile.age}` : ""}${profile.height ? `, ${profile.height}` : ""}${profile.goalWeight && routine !== "bufftxn" ? `, goal weight ${profile.goalWeight} lbs` : ""}.`,
       profile.notes ? `User goals/notes: ${profile.notes}` : "",
-      `Current date: ${todayStr}. Round ${rounds.current} of the 90-day program, day ${programDay > 0 ? Math.min(programDay, 90) + (programDay > 90 ? "+ (round overdue)" : "") : "?"} of 90. ${rounds.history.length} prior round(s) completed.`,
+      routine === "bufftxn"
+        ? `Current date: ${todayStr}. Program: Buff TXN — a 7-day weekly teen-beginner structure (3 full-body lifting days, conditioning, sport/sprints, real recovery days).`
+        : `Current date: ${todayStr}. Round ${rounds.current} of the 90-day program, day ${programDay > 0 ? Math.min(programDay, 90) + (programDay > 90 ? "+ (round overdue)" : "") : "?"} of 90. ${rounds.history.length} prior round(s) completed.`,
       `Active routine: ${ROUTINES[routine].name}. ${routine === "sh90" ? `Position: Week ${week}, Day ${day} (${todayData?.label || ""}), ${phaseLabel}.` : `Today's scheduled workout: ${todayData?.label || "n/a"}.`}`,
       `Workouts completed this round: ${roundCompletedCount}.`,
       `Recent workouts: ${recentSessions.join("; ") || "none yet"}.`,
       `Weight log (last ${recentWeights.length}): ${recentWeights.join(", ") || "none"}. Current: ${currentWeight || "?"} lbs, start: ${startWeight || "?"} lbs.`,
       `Habit rates: ${habitSummary}.`,
-      `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein (goal ${calorieGoal} cal).`,
-      `Home recovery equipment available: HBOT chamber, red light panel, Neuronic photobiomodulation helmet, hydrogen inhalation, PowerPlate, free weights.`,
-      `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, training organized in cycles of 6-8 build weeks + 1 de-escalation week which the app runs automatically (build ramps ~10 to 16-20 sets/muscle while RIR shaves 3 to 0-1; de-escalation halves volume at 60-70% load; next cycle auto-starts and rebuilds from low volume; maintenance mode = ~1/3 volume at heavy loads with the clock paused during heavy call), hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
+      routine === "bufftxn"
+        ? `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein. (No calorie budget for this user — protein and consistency are the only levers to coach.)`
+        : `Today's nutrition so far: ${foodToday.cal} cal, ${foodToday.protein}g protein (goal ${calorieGoal} cal).`,
+      routine === "bufftxn" ? "" : `Home recovery equipment available: HBOT chamber, red light panel, Neuronic photobiomodulation helmet, hydrogen inhalation, PowerPlate, free weights.`,
+      routine === "bufftxn"
+        ? `IMPORTANT — the user is a TEENAGE BEGINNER (13-14, still growing). Coach per AAP/NSCA youth guidance: technique before load, always; effort at RPE 6-8 (2-4 reps left in the tank), never grinding to failure; double progression — add ~5-10% weight only after hitting the top of the rep range on ALL sets with clean form; NEVER recommend calorie cutting, dieting, fat-burner or muscle supplements — food-first protein at each meal, leanness comes from strength + sleep + growth, not restriction; sleep 8-10 h is the single highest-leverage lever; no 1-rep-max attempts or grinding singles; reassure that proper lifting does NOT stunt growth (AAP: growth-plate injuries come from accidents and bad supervision, not good training); if they mention persistent fatigue, joint pain near the knee or heel, bad sleep, or losing the fun — advise an easy week and telling a parent or doctor; encourage sport, sprints, and play as part of the program; keep the tone positive and about getting STRONGER, never about appearance.`
+        : `Training principles the user follows (from their Aug 2026 evidence review — align your advice with these): 10-20 hard sets per muscle per week, ~2x/week frequency, most sets at 0-3 reps in reserve (RIR anchoring, never fixed percentages), double progression, training organized in cycles of 6-8 build weeks + 1 de-escalation week which the app runs automatically (build ramps ~10 to 16-20 sets/muscle while RIR shaves 3 to 0-1; de-escalation halves volume at 60-70% load; next cycle auto-starts and rebuilds from low volume; maintenance mode = ~1/3 volume at heavy loads with the clock paused during heavy call), hip hinge + loaded carries + brief power work + rotator cuff work are non-negotiable patterns, 150+ min/week Zone 2 plus one weekly VO2max session (Norwegian 4x4), protein 1.6-2.2 g/kg/day in ~0.4 g/kg doses, creatine 5 g/day, 7-9 h sleep, two rest days. The Upper/Lower routine implements this; Full-Body 3x is the fallback for call-disrupted weeks.`,
       `The user may ask about training, recovery, habits, nutrition, or motivation. If asked for medical advice beyond general fitness, recommend consulting a professional. Keep answers under 200 words unless asked for detail.`,
     ].filter(Boolean).join("\n");
   };
@@ -2634,7 +2750,7 @@ function SuperhumanApp() {
             <div style={{ fontSize: fs(14), fontWeight: 600 }}>{weekLabel}</div>
             {programDay > 0 && programDay <= (routine === "sh90" ? 90 : cycleLenDays) && (
               <div style={{ fontSize: fs(11), color: t.accent, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
-                {maintenanceOn ? `Cycle paused · maintenance` : routine === "sh90" ? `Program Day ${programDay} of 90` : `Cycle Day ${programDay} of ${cycleLenDays}`}
+                {ROUTINES[routine]?.noCycle ? `7-day program · repeats weekly` : maintenanceOn ? `Cycle paused · maintenance` : routine === "sh90" ? `Program Day ${programDay} of 90` : `Cycle Day ${programDay} of ${cycleLenDays}`}
               </div>
             )}
           </div>
@@ -3106,7 +3222,7 @@ function SuperhumanApp() {
             )}
 
             {/* Cycle-phase banner: build week target / de-escalation / maintenance */}
-            {ROUTINES[routine]?.weekday && !crossRoutineSession && programDay > 0 && programDay <= cycleLenDays && (() => {
+            {ROUTINES[routine]?.weekday && !ROUTINES[routine]?.noCycle && !crossRoutineSession && programDay > 0 && programDay <= cycleLenDays && (() => {
               const color = roundPhase.key === "maintenance" ? t.success
                 : roundPhase.key === "deescalation" ? t.warning
                 : t.accent;
@@ -4217,8 +4333,9 @@ function SuperhumanApp() {
               );
             })}
 
-            {/* ── Recovery Stack (home equipment wellness) ── */}
-            {(() => {
+            {/* ── Recovery Stack (home equipment wellness) — adult-only:
+                 creatine + device protocols have no place on the teen program ── */}
+            {!ROUTINES[routine]?.noCycle && (() => {
               const stackIds = WELLNESS_STACK[isoWeekday(selectedDate)] || [];
               const dayWellness = wellnessLog[selectedDate] || {};
               const doneCount = stackIds.filter(id => dayWellness[id]).length;
@@ -4693,7 +4810,7 @@ function SuperhumanApp() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
                   { label: "Round", value: rounds.current },
-                  { label: routine === "sh90" ? "Program Day" : "Cycle Day", value: (() => { const lim = routine === "sh90" ? 90 : cycleLenDays; return programDay > 0 && programDay <= lim ? `${programDay} / ${lim}` : "—"; })() },
+                  { label: routine === "sh90" ? "Program Day" : ROUTINES[routine]?.noCycle ? "Program" : "Cycle Day", value: ROUTINES[routine]?.noCycle ? "Weekly" : (() => { const lim = routine === "sh90" ? 90 : cycleLenDays; return programDay > 0 && programDay <= lim ? `${programDay} / ${lim}` : "—"; })() },
                   { label: "Current Phase", value: routine === "sh90" ? phaseLabel : ROUTINES[routine].name },
                   { label: "Workouts (Round)", value: roundCompletedCount },
                   { label: "Workouts (All Time)", value: Object.values(sessionLog).filter(s => s.status === "completed").length },
@@ -4729,7 +4846,8 @@ function SuperhumanApp() {
             }}>
               {[
                 { key: "routine", icon: "🎯", label: "Workout Routine", sub: ROUTINES[routine].name },
-                { key: "cycles", icon: maintenanceOn ? "🛡️" : "🔄", label: "Training Cycles", sub: maintenanceOn ? `Cycle ${rounds.current} · paused` : `Cycle ${rounds.current}` },
+                // Teen no-cycle program: hide the adult periodization page entirely
+                ...(ROUTINES[routine]?.noCycle ? [] : [{ key: "cycles", icon: maintenanceOn ? "🛡️" : "🔄", label: "Training Cycles", sub: maintenanceOn ? `Cycle ${rounds.current} · paused` : `Cycle ${rounds.current}` }]),
                 { key: "mode", icon: "🏋️", label: "Workout Mode", sub: workoutMode === "gym" ? "Gym" : workoutMode === "home" ? "Home" : "Bodyweight" },
                 { key: "tickets", icon: "🛟", label: "Support & Tickets", sub: (() => { const n = (tickets || []).filter(tk => !["resolved", "closed"].includes(tk.status)).length; return n > 0 ? `${n} open` : "All clear"; })() },
                 { key: "profile", icon: "👤", label: "Personal Info", sub: profile.name || "Set up your profile" },
@@ -4874,10 +4992,30 @@ function SuperhumanApp() {
                   );
                 })}
               </div>
+              {routine === "bufftxn" && (
+                <div style={{
+                  marginTop: 12, padding: "10px 12px", borderRadius: 10,
+                  background: t.accentGlow, fontSize: fs(11), color: t.textDim, lineHeight: 1.5,
+                }}>
+                  🐂 <b style={{ color: t.accent }}>Buff TXN</b> is a 7-day weekly plan for teen beginners: Mon/Wed/Fri full-body lifting, Tue conditioning, Sat sport + sprints, Thu/Sun recovery. Your equipment follows <b>Workout Mode</b> (Gym / Home / Bodyweight) — set it in the menu above. Technique first, 2-4 reps always left in the tank, and 9-10 hours of sleep — that's where the muscle comes from.
+                </div>
+              )}
             </div>
 
             </>)}
-            {meSubPage === "cycles" && (<>
+            {meSubPage === "cycles" && ROUTINES[routine]?.noCycle && (
+              /* Teen program: no periodization — plain weekly explainer instead */
+              <div style={{
+                background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+                border: `1px solid ${t.border}`,
+              }}>
+                <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Weekly Plan</div>
+                <div style={{ fontSize: fs(12), color: t.textDim, lineHeight: 1.6 }}>
+                  {ROUTINES[routine].name} repeats every week — no cycles, no deloads to manage. Lift Mon/Wed/Fri, condition Tue, play + sprint Sat, recover Thu/Sun. Get stronger by adding a little weight when the top reps feel clean, sleep 9-10 hours, and eat real food. That's the whole system.
+                </div>
+              </div>
+            )}
+            {meSubPage === "cycles" && !ROUTINES[routine]?.noCycle && (<>
             {/* ── Training Cycles ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -4914,8 +5052,8 @@ function SuperhumanApp() {
                 </div>
               </div>
 
-              {/* Cycle controls (weekday routines) */}
-              {ROUTINES[routine]?.weekday && (
+              {/* Cycle controls (weekday routines; hidden for no-cycle teen program) */}
+              {ROUTINES[routine]?.weekday && !ROUTINES[routine]?.noCycle && (
                 <div style={{ marginBottom: 10 }}>
                   {/* Heavy-call / maintenance toggle */}
                   <button onClick={() => {
@@ -5520,7 +5658,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.10';
+    var APP_VERSION = 'v3.11';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
