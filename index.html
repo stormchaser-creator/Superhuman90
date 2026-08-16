@@ -34,10 +34,12 @@
     input[type=number] { -moz-appearance: textfield; }
     textarea { font-family: 'DM Sans', sans-serif; }
     .safe-top { padding-top: 44px; padding-top: env(safe-area-inset-top, 44px); }
-    /* 100vh undershoots the real screen in iOS standalone mode, leaving a
-       body-colored bar under the app — fill-available (older iOS) and dvh
-       (16.4+) track the true viewport */
+    /* Browser tabs: dvh tracks the visible viewport. iOS standalone has a bug
+       where the reported viewport is screen-minus-top-inset (59pt short on
+       Dynamic Island phones) while 100vh still measures the TRUE full screen —
+       so installed apps use 100vh and place the nav in flow at its bottom. */
     .app-shell { height: 100vh; height: -webkit-fill-available; height: 100dvh; }
+    .app-shell.standalone { height: 100vh; }
   </style>
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -2996,7 +2998,7 @@ function SuperhumanApp() {
   };
 
   return (
-    <div className="app-shell" style={{
+    <div className={"app-shell" + (navigator.standalone ? " standalone" : "")} style={{
       fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
       background: t.bg, color: t.text,
       maxWidth: 430, margin: "0 auto", position: "relative",
@@ -3258,7 +3260,7 @@ function SuperhumanApp() {
         )}
       </div>
       {/* ── Content Area ── */}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", paddingBottom: 160, WebkitOverflowScrolling: "touch" }}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", paddingBottom: 24, WebkitOverflowScrolling: "touch" }}>
 
         {/* ═══ WORKOUT TAB ═══ */}
         {tab === "workout" && (
@@ -6267,13 +6269,12 @@ function SuperhumanApp() {
         )}
       </div>
 
-      {/* ── Bottom Navigation — Credential-style solid slab. The page behind
-           is painted the same color, so if iOS shorts the standalone viewport
-           (owner's phone: 873pt of a 932pt screen) the bar still reads as
-           anchored to the physical bottom edge. ── */}
+      {/* ── Bottom Navigation — solid slab, IN FLOW as the shell's last flex
+           child. The shell is true-screen-height (100vh in standalone), so the
+           slab's bottom edge is the physical screen bottom — immune to the iOS
+           bug where fixed/bottom:0 stops 59pt short of the screen. ── */}
       <div id="sh90-nav" style={{
-        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-        width: "100%", maxWidth: 430,
+        flexShrink: 0, width: "100%",
         padding: "6px 12px", paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
         background: t.card, borderTop: `1px solid ${t.border}`, zIndex: 50,
       }}>
@@ -6321,7 +6322,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.24';
+    var APP_VERSION = 'v3.25';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
