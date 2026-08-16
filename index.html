@@ -35,8 +35,9 @@
     textarea { font-family: 'DM Sans', sans-serif; }
     .safe-top { padding-top: 44px; padding-top: env(safe-area-inset-top, 44px); }
     /* 100vh undershoots the real screen in iOS standalone mode, leaving a
-       body-colored bar under the app — dvh tracks the true viewport */
-    .app-shell { height: 100vh; height: 100dvh; }
+       body-colored bar under the app — fill-available (older iOS) and dvh
+       (16.4+) track the true viewport */
+    .app-shell { height: 100vh; height: -webkit-fill-available; height: 100dvh; }
   </style>
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -1344,7 +1345,7 @@ const WELLNESS_STACK = {
 // ── Habit Data ──
 // Habit indexes are baked into synced habit_log rows (columns h0..h9) and
 // habit_notes — APPEND new habits, never renumber. Indexes 8-9 are teen-only.
-const HABIT_LABELS = ["Reading", "No ASPM", "5K Steps", "Workout", "Track Weight", "Track Food", "Deep Work", "Reflection", "Studying", "Sleep 9h+", "Chores"];
+const HABIT_LABELS = ["Reading", "No ASPM", "5K Steps", "Workout", "Track Weight", "Track Food", "Deep Work", "Reflection", "Studying", "Sleep 8+", "Chores"];
 const HABIT_ICONS = ["📖", "🚫", "🚶", "💪", "⚖️", "🍽️", "🧠", "🪞", "📝", "😴", "🧹"];
 // Daily step goal
 const STEP_GOAL = 5000;
@@ -5753,7 +5754,9 @@ function SuperhumanApp() {
       <div style={{
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 430, padding: "16px 16px 20px",
-        paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))",
+        // Hug the bottom: clear the home indicator by a hair, don't stack
+        // that clearance on top of the base padding (that floats the bar)
+        paddingBottom: "max(14px, calc(4px + env(safe-area-inset-bottom, 0px)))",
         background: `linear-gradient(transparent, ${t.bg} 30%)`, zIndex: 50,
       }}>
         <div style={{
@@ -5801,7 +5804,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.19';
+    var APP_VERSION = 'v3.20';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
