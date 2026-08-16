@@ -774,6 +774,16 @@ const THEMES = {
     border: "#3b1a14", borderLight: "#2a1410",
     gradient: "linear-gradient(135deg, #ef4444, #f97316)",
   },
+  texans: {
+    // Houston Texans: Deep Steel Blue #03202F · Battle Red #A71930 · Liberty White
+    name: "Texans",
+    bg: "#02161f", card: "#03202f", cardAlt: "#062c3e",
+    accent: "#e31837", accentGlow: "rgba(227,24,55,0.14)",
+    text: "#f5f7f8", textDim: "#7d97a5", textMuted: "#3a5361",
+    success: "#22c55e", danger: "#ef4444", warning: "#f59e0b",
+    border: "#0c3a4d", borderLight: "#082939",
+    gradient: "linear-gradient(135deg, #a71930, #e31837)",
+  },
 };
 
 // ── Exercise Alternatives DB ──
@@ -1387,7 +1397,7 @@ function MiniChart({ data, color, height = 60, label }) {
 
 // ── Main App ──
 function SuperhumanApp() {
-  const [theme, setTheme] = useState(() => loadState("theme", "arctic"));
+  const [theme, setTheme] = useState(() => { const th = loadState("theme", "arctic"); return THEMES[th] ? th : "arctic"; });
   const [tab, setTab] = useState("habits");
   const [week, setWeek] = useState(() => loadState("nextWorkoutPos", { week: 1, day: 1 }).week);
   const [day, setDay] = useState(() => loadState("nextWorkoutPos", { week: 1, day: 1 }).day);
@@ -1578,6 +1588,7 @@ function SuperhumanApp() {
   const [isListening, setIsListening] = useState(false);
   const [weightLog, setWeightLog] = useState(() => loadState("weightLog", {}));
   const [weightInput, setWeightInput] = useState("");
+  const [profileWeightInput, setProfileWeightInput] = useState(""); // Me → Personal Info logger (teen programs)
   const [weightLogAnim, setWeightLogAnim] = useState(false);
 
   // ── Date Tracking ──
@@ -2036,6 +2047,11 @@ function SuperhumanApp() {
     if (ROUTINES[routine]?.noCycle && rounds.maintenance) {
       setRounds(prev => ({ ...prev, maintenance: null }));
     }
+  }, [routine]);
+
+  // Buff TXN defaults to the Texans theme when selected (still changeable in Appearance)
+  useEffect(() => {
+    if (routine === "bufftxn" && THEMES.texans) setTheme("texans");
   }, [routine]);
 
   const roundStartObj = new Date(rounds.startDate + "T12:00:00");
@@ -3723,7 +3739,8 @@ function SuperhumanApp() {
         {tab === "habits" && (
           <div style={{ padding: "16px 16px 0" }}>
             
-            {/* ── Daily Weight Logger ── */}
+            {/* ── Daily Weight Logger (teens track weight in Me → Personal Info instead) ── */}
+            {!ROUTINES[routine]?.noCycle && (
             <div style={{
               background: t.card, borderRadius: 16, padding: 16, marginBottom: 12,
               border: `1px solid ${selectedWeight ? t.success + "40" : t.accent + "40"}`,
@@ -3883,6 +3900,7 @@ function SuperhumanApp() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Divider */}
             <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 10, fontFamily: "'DM Mono', monospace", letterSpacing: 1.5, textTransform: "uppercase" }}>
@@ -4823,6 +4841,46 @@ function SuperhumanApp() {
           <div style={{ padding: "16px 16px 0", overflowX: "hidden" }}>
 
             {meSubPage === "profile" && (<>
+            {/* Weight tracking for teen programs — on demand, deliberately not a
+                daily habit and not on the home page */}
+            {ROUTINES[routine]?.noCycle && (
+              <div style={{
+                background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+                border: `1px solid ${t.border}`,
+              }}>
+                <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>⚖️ Weight</div>
+                <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 10, lineHeight: 1.5 }}>
+                  Log it here whenever you want — it's not a daily thing. {(() => {
+                    const entries = Object.entries(weightLog).sort();
+                    const last = entries[entries.length - 1];
+                    return last ? `Last: ${last[1]} lbs (${new Date(last[0] + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}).` : "No entries yet.";
+                  })()}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="number" placeholder="Today's weight (lbs)"
+                    value={profileWeightInput}
+                    onChange={e => setProfileWeightInput(e.target.value)}
+                    style={{
+                      flex: 1, padding: "10px 12px", borderRadius: 10,
+                      border: `1px solid ${t.border}`, background: t.cardAlt,
+                      color: t.text, fontSize: fs(14), fontFamily: "'DM Mono', monospace", outline: "none",
+                    }} />
+                  <button onClick={() => {
+                      const v = parseFloat(profileWeightInput);
+                      if (v > 0 && v < 1000) {
+                        setWeightLog(prev => ({ ...prev, [todayStr]: v }));
+                        syncWeight(todayStr, v);
+                        setProfileWeightInput("");
+                      }
+                    }}
+                    style={{
+                      padding: "10px 18px", borderRadius: 10, border: "none",
+                      background: t.accent, color: "#fff", fontSize: fs(13), fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}>Log</button>
+                </div>
+              </div>
+            )}
             {/* ── Personal Info ── */}
             <div style={{
               background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
@@ -5732,7 +5790,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.15';
+    var APP_VERSION = 'v3.16';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
