@@ -1337,10 +1337,10 @@ const HABIT_ICONS = ["📖", "🚫", "🚶", "💪", "⚖️", "🍽️", "🧠"
 const STEP_GOAL = 5000;
 // How much each habit counts toward the daily completion % (Track Weight counts half)
 const HABIT_WEIGHTS = [1, 1, 1, 1, 0.5, 1, 1, 1, 1, 1];
-// Which habits each program shows: teens (Buff TXN) get Studying + Sleep and
-// skip No ASPM / Track Food / Deep Work; adults are unchanged
+// Which habits each program shows: teens (Buff TXN) track only Reading,
+// Studying, Workout, and Sleep; adults are unchanged
 const ADULT_HABITS = [0, 1, 2, 3, 4, 5, 6, 7];
-const TEEN_HABITS = [0, 8, 2, 3, 4, 9, 7];
+const TEEN_HABITS = [0, 8, 3, 9];
 
 // ── Font Size Scaler ──
 const TEXT_OFFSETS = { small: 0, medium: 1, large: 3, giant: 5, really: 8 };
@@ -5732,7 +5732,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.13';
+    var APP_VERSION = 'v3.14';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
