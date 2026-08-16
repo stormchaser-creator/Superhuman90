@@ -279,3 +279,21 @@ RETURNS SETOF app_errors LANGUAGE sql SECURITY DEFINER SET search_path = public 
 $$;
 REVOKE ALL ON FUNCTION sh90_agent_errors(TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sh90_agent_errors(TEXT, INT) TO anon, authenticated;
+
+-- ── Family/coach view (APPLIED to live DB 2026-08-16) ───────────────────────
+-- A device opts in by creating a share code; anyone with the code sees an
+-- AGGREGATED weekly summary via the RPC (never raw rows). Deleting the row
+-- (Stop sharing in the app) revokes access instantly.
+CREATE TABLE IF NOT EXISTS share_links (
+  code TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  user_id UUID DEFAULT auth.uid(),
+  display_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE share_links ENABLE ROW LEVEL SECURITY;
+CREATE POLICY share_links_insert ON share_links FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY share_links_select ON share_links FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY share_links_delete ON share_links FOR DELETE TO authenticated USING (user_id = auth.uid());
+-- sh90_family_summary(p_code) SECURITY DEFINER returns jsonb {name, weekWorkouts,
+-- workoutsThisWeek, habitsToday, lastActive} — see git history for full body.

@@ -788,6 +788,16 @@ const THEMES = {
     border: "#0c3a4d", borderLight: "#082939",
     gradient: "linear-gradient(135deg, #a71930, #e31837)",
   },
+  naruto: {
+    // Hidden Leaf palette: jumpsuit orange on headband navy
+    name: "Naruto",
+    bg: "#0a0d18", card: "#121729", cardAlt: "#1a2136",
+    accent: "#ff8c1a", accentGlow: "rgba(255,140,26,0.15)",
+    text: "#f4f6fb", textDim: "#8791ad", textMuted: "#3d4460",
+    success: "#22c55e", danger: "#ef4444", warning: "#facc15",
+    border: "#252d4a", borderLight: "#1b2138",
+    gradient: "linear-gradient(135deg, #ff8c1a, #f97316)",
+  },
 };
 
 // ── Exercise Alternatives DB ──
@@ -1203,6 +1213,217 @@ const BUFFTXN_DATA = {
   },
 };
 
+// ── Exercise form videos (curated + machine-verified via YouTube oEmbed) ──
+// Names without an entry fall back to a YouTube search link.
+const EXERCISE_VIDEOS = {
+  "Band Good Morning": "fJA39ZOVaEQ",
+  "Band Pull-Apart + Face Pull": "smSSXITNpCI",
+  "Band Row or Band Lat Pulldown": "LSkyinhmA8k",
+  "Barbell Bicep Curl": "JJB8XgKltA8",
+  "Barbell Forearm Extension": "C5y9LYXhuBo",
+  "Barbell or Dumbbell Bench Press": "vthMCtgVtFw",
+  "Bear Crawl": "U3Y58Kyw7Xw",
+  "Bent Over or Pendlay Rows": "rqTOAM8WoeM",
+  "Bent-Over Cable Rear Delt Fly": "sapuLkXjAEs",
+  "Biceps Curl (any)": "ykJmrZ5v0Oo",
+  "Bodyweight Squat": "P-yaD24bUE8",
+  "Box Jump or Med-Ball Throw": "3INzGHuk23U",
+  "Bulgarian Split Squat": "wtGCCaPg5gE",
+  "Bulgarian Split Squat (chair)": "zFbhMqkvg6o",
+  "Cable Ab Crunch": "aBd6T01PBqw",
+  "Cable Behind The Back Wrist Curl": "2Nk6J1wk0FY",
+  "Cable EZ Bar Upright Row": "FfyheD6NZvU",
+  "Cable Flyers": "8Um35Es-ROE",
+  "Cable Kickbacks": "ZvF4Oi_6Vtg",
+  "Cable Lateral Raise": "qitQHqNZbeM",
+  "Cable Pressdown": "8JBHlaS7Dkk",
+  "Cable Pressdowns (rope)": "vB5OHsJ3EME",
+  "Cable Rope Pushdown": "vPeQu_L-1n0",
+  "Cable Straight Bar Curl": "_hRnRorKRWs",
+  "Cable Straight Bar Tricep Pushdown": "E-cV_8XCw1o",
+  "Calf Raises": "4HQ8Am9IuME",
+  "Cambered Bar Curls": "SDFZBaJcTsU",
+  "Cambered Bar Preacher Curls": "e7X6G07KnPI",
+  "Chest-Supported Row": "_b6ch2nIchk",
+  "Chin-Up (assisted OK)": "e1YSApl-QcM",
+  "Close Grip Pulldowns": "mUoo2l-p8Hw",
+  "DB Farmer Carry": "lLAw6fUccKA",
+  "DB Floor Press or Push-Up": "uUGDRwge4F8",
+  "DB Overhead Press": "prP9rHHp0tg",
+  "DB Reverse Lunge": "RZKXLMxPF_I",
+  "DB Romanian Deadlift": "IJdUtnxAmNo",
+  "DB Single-Leg RDL": "X2BM5J3UkEo",
+  "DB or Band Squat (slow tempo)": "gm4ln6PO4rc",
+  "Dead Bug": "bxn9FBrt4-A",
+  "Decline Chest Press": "_DsWm45BCqg",
+  "Dips Machine": "Zg0tT27iYuY",
+  "Donkey Calf Raises": "Jk_fDd57e98",
+  "Dumbbell Concentration Curls": "Jvj2wV0vOYU",
+  "Dumbbell Fly": "eozdVDA78K0",
+  "Dumbbell Hammer Curl": "zC3nLlEvin4",
+  "Dumbbell Lateral Raise": "3VcKaXpzqRo",
+  "Dumbbell Rows or Shrugs (incline braced)": "_b6ch2nIchk",
+  "Dumbbell Shoulder Press": "fuQpuu--bMI",
+  "Dumbbell Walking Lunge": "_DLIS8SySzs",
+  "Face Pull / External Rotation": "eQaSpG7aMYQ",
+  "Face Pull or Band Pull-Apart": "AlTGQrDOd98",
+  "Farmer Carry": "lLAw6fUccKA",
+  "Flat Bench Press": "rT7DgCr-3pg",
+  "Flat Dumbbell Presses": "xhEhjF5ozuY",
+  "Flat Dumbbells": "jRUC6IVav30",
+  "Front Squat or Leg Press": "ezRP5-ick9Q",
+  "Glute Ham Raises or Lying Leg Curls": "6XB6f8yk9cU",
+  "Goblet Squat (DB)": "BR4tlEE_A98",
+  "Goblet or Barbell Back Squat": "6mf0oa2GGUc",
+  "Hack Squats": "fE5BWPy7uRc",
+  "Hammer Curl": "zC3nLlEvin4",
+  "Hammer Straight Machine (Closed Grip)": "9WeqqzVCmY0",
+  "Hammer Strength Chest Press": "0CFOTfwP4CY",
+  "Hanging Knee Raise or Dead Bug": "X-ACS9vpRyU",
+  "Hanging Leg Raise": "vwl68EF9M2Q",
+  "High Row with Barbell": "rTbb70P8_BI",
+  "Hip Abduction": "OjI5OpV6IWA",
+  "Hip Adduction": "ScqpbvOZWe8",
+  "Hip Bridges": "nbjJjSa0cKo",
+  "Hip Hyperextension on Bench": "81riMKjNBuA",
+  "Hollow-Body Hold": "4KdhjXUYvmM",
+  "Incline Cable Flyes": "uUfsj1DxWVs",
+  "Incline Dumbbell Bench Press": "bf93PZWLeF8",
+  "Incline Dumbbell Fly": "idAvu2HvqSQ",
+  "Incline Dumbbell Press": "Z6sFTftvNDM",
+  "Incline Dumbbell Press or Push-Up": "hChjZQhX1Ls",
+  "Incline Dumbbell Presses": "Z6sFTftvNDM",
+  "Incline Smith Machine Bench Press": "yFQshytandQ",
+  "Incline or Decline Push-Up": "0JUrOH--Kdk",
+  "Inclined Chest Press": "bf93PZWLeF8",
+  "Inclined Dumbbell Fly": "idAvu2HvqSQ",
+  "Inclined Press": "SrqOu55lrYU",
+  "Inclined T-Bar Rows": "TyLoy3n_a10",
+  "Inverted Row (feet elevated)": "44W1JgF0lyQ",
+  "Inverted Row (table or bar)": "GdyhjXlxE-U",
+  "Jumps (pogo / broad / low box)": "YLPQsdRDmB0",
+  "Lat Pulldown": "CAwf7n6Luuc",
+  "Lat Pulldown or Assisted Pull-Up": "CAwf7n6Luuc",
+  "Lateral Raises": "3VcKaXpzqRo",
+  "Lateral Raises (Dumbbells)": "3VcKaXpzqRo",
+  "Lean-over Dumbbell Shrug": "yuYj4EP3VX4",
+  "Leg Curl": "vl5nUdE9mWM",
+  "Leg Curls": "vl5nUdE9mWM",
+  "Leg Extension": "tTbJBUKnWU8",
+  "Leg Extensions": "tTbJBUKnWU8",
+  "Leg Press": "cDGOn-yfKJA",
+  "Leg Press or Split Squat": "cDGOn-yfKJA",
+  "Leg Presses": "cDGOn-yfKJA",
+  "Lying Leg Curls": "vl5nUdE9mWM",
+  "Machine Chest Fly": "kYnhyoel7Sc",
+  "Machine Preacher Curl": "R-8Sa0_qiws",
+  "Machine Press": "pLofEAcfsO8",
+  "Machine or Cable Row": "QXy1bfxMae0",
+  "Neutral Grip Lat Pulldown": "ywhh5jbw1PI",
+  "Norwegian 4\u00d74 Intervals": "3r0Kd3G4kek",
+  "One-Arm DB Row": "PgpQ4-jHiq4",
+  "One-Arm Dumbbell Row": "PgpQ4-jHiq4",
+  "Overhead Crunch Extensions": "myg3Sob4LtQ",
+  "Overhead Dumbbell Tricep Extension": "O7e8j8K3cJo",
+  "Overhead or Machine Press": "ZXpdJOLNoWw",
+  "Pallof Press": "xeFp4MXad98",
+  "Pallof Press (Band)": "P16SQlmWj1o",
+  "Pike Push-Up": "pHR5yG6xBps",
+  "Plank": "kL_NJAkCQBg",
+  "Plate Front Raise": "HN8HYJTOl8c",
+  "Plate Wrist Curl": "YLf9zhW4GZY",
+  "Posterior Shoulders Machine": "e4dJ1QoxUtI",
+  "Preacher Curl": "BPmUhDtdQfw",
+  "Prone Hamstring Curl": "3gZm9wGTsEo",
+  "Push-Up Progression": "ze4qofHM20k",
+  "Push-Up Variation (tempo)": "bT-2pDVpfGQ",
+  "Rack Chins": "Iq3-trU7GLQ",
+  "Rear Delt Fly / Cuff Work": "buuYPLVXsJg",
+  "Reverse Lunge or Split Squat": "ALl174GTuoY",
+  "Reverse Pec Deck Rear Delt Fly": "dC7jhEk-29A",
+  "Reverse Pull Down Machine": "kWwPlzwTYAE",
+  "Romanian Deadlift": "jEy_czb3RKA",
+  "Romanian Deadlift (light)": "2SHsk9AzdjA",
+  "Romanian Deadlifts": "2SHsk9AzdjA",
+  "Rope Extension": "-KVa3M1uZfs",
+  "Rope Straight-arm Lat Pullthrough": "CqsO1bQl9QI",
+  "Seated Bench Press": "vmGiaGDuAwE",
+  "Seated Cable Row": "sP_4vybjVJs",
+  "Seated Calf Raise": "ORY-ke6vcgk",
+  "Seated Calf Raises": "ORY-ke6vcgk",
+  "Seated Closed Grip Bar Row": "XaHV_8Nbyug",
+  "Seated Dumbbell Hammer Curl": "bdlqQAVdcEk",
+  "Seated Dumbbell Presses": "rO_iEImwHyo",
+  "Seated Dumbbell Shoulder Press": "rO_iEImwHyo",
+  "Seated Dumbbell Shoulder Presses": "rO_iEImwHyo",
+  "Seated Leg Curl": "t9sTSr-JYSs",
+  "Seated Leg Curls": "t9sTSr-JYSs",
+  "Seated Tricep Extension (cambered bar)": "priRWVpDV8c",
+  "Shoulder Press (Hammer Machine)": "8hmFceuz22Q",
+  "Shoulder Press Machine": "e5gJP7quyGk",
+  "Side Lateral Raises (DBs or cables)": "3VcKaXpzqRo",
+  "Side Plank": "44ND4bOB-T0",
+  "Side Plank + Hip Lift": "V4A0wIh5HNk",
+  "Single-Arm Cable Curl": "njLoCel5lUI",
+  "Single-Arm Cable Row": "CrylzZHfO1c",
+  "Single-Arm Cable Tricep Pushdown": "RhkRr9eyOzQ",
+  "Single-Arm Lat Pulldown": "GJwgug4jytc",
+  "Single-Arm Smith Machine Shrug": "0n_Moi9Eg3U",
+  "Single-Arm Supinated Tricep Cable Pushdown": "dNjF8V8K8yo",
+  "Single-Leg Glute Bridge": "VUl8R0kn6v4",
+  "Single-Leg Leg Extension": "82IuSLk5zNc",
+  "Single-Leg RDL": "Zfr6wizR8rs",
+  "Skull Crushers": "RavQHfFxbdA",
+  "Smith Machine Close-Grip Bench Press": "z8UWdGwtzRM",
+  "Smith Machine Reverse Lunge": "IwRXzdns-Ho",
+  "Smith Machine Romanian Deadlift": "nmGzbW15qYo",
+  "Smith Machine Shrug": "8ppOGwvaFko",
+  "Smith Machine Squat": "iAcRGCsG_PY",
+  "Spider Curls (incline braced)": "eXdBcI7gcsk",
+  "Sprints": "6m_fjNhRhkY",
+  "Squat or Hack Squat": "bs_Ej32IYgo",
+  "Squats": "DlS-GAF8Edg",
+  "Squats Machine": "h4eE6-Hs2hQ",
+  "Standing Biceps Curl": "QZEqB6wUPxQ",
+  "Standing Calf Raise": "4HQ8Am9IuME",
+  "Standing Calf Raises": "ndQc4mz4mBU",
+  "Stiff-Legged Deadlifts": "1uDiW5--rAE",
+  "Straight Bar Pull Down (Triceps)": "E-cV_8XCw1o",
+  "Strict Press": "eNFXEEdfQp4",
+  "Suitcase Carry": "y-hn_Ha1-RE",
+  "Suitcase Carry (DB)": "VD6u03iRsD8",
+  "T Inclined Bar Machine": "Mlr-Lx-10HQ",
+  "T Pull Down": "CAwf7n6Luuc",
+  "T-Bar Pull Down": "-c_TPoSUYuk",
+  "Trap-Bar Deadlift or Hip Thrust": "PWJU5grrh4Y",
+  "Trap-Bar or Romanian Deadlift": "PWJU5grrh4Y",
+  "Triceps Extension (any)": "X-iV-cG8cYs",
+  "Triceps Pull Down": "n2FSCB4vRSA",
+  "Underhand Cable / Machine Row": "lz1RUpxoVqE",
+  "Upright Rows": "jaAV-rD45I0",
+  "Walking / Standing Dumbbell Lunge": "_DLIS8SySzs",
+  "Walking Lunge": "_DLIS8SySzs",
+  "Walking Lunges": "_DLIS8SySzs",
+  "Wall Sit": "qbwoTaNH6as",
+  "Weighted / Assisted Pull-up": "HuuyDNGrCI8",
+  "Weighted Decline Sit Up HOLDS": "qZaMPggxdhg",
+  "Weighted Decline Sit-up": "qZaMPggxdhg",
+  "Weighted Dip / Assisted Dip": "yN6Q1UI_xkE",
+  "Weighted Dips": "yN6Q1UI_xkE",
+  "Weighted Hip Extension": "GFqfIInCuUQ",
+  "Weighted Pull-Up or Lat Pulldown": "HuuyDNGrCI8",
+  "Weighted Pull-Ups": "HuuyDNGrCI8",
+  "Wide-grip Lat Pulldown": "j6KuKd_N8uU",
+  "Wide-grip row": "SYZxuSSQ-hk",
+  "Zone 2 Cardio": "taO8kKsx448",
+};
+const getExerciseVideoUrl = (name) => {
+  const clean = String(name || "").replace(/^BW:\s*/, "").replace(/^H:\s*/, "").trim();
+  const id = EXERCISE_VIDEOS[clean];
+  if (id) return "https://www.youtube.com/watch?v=" + id;
+  return "https://www.youtube.com/results?search_query=" + encodeURIComponent("how to " + clean + " proper form");
+};
+
 // ── Routine Registry ──
 // `weekday: true` = the calendar weekday picks the workout (vs SH90's rolling schedule)
 const ROUTINES = {
@@ -1527,6 +1748,73 @@ function SuperhumanApp() {
   };
   useEffect(() => { if (tab === "profile" && tickets === null) loadTickets(); }, [tab]);
 
+  // ── Family/coach view ──
+  // (state must be declared above the effects that depend on it)
+  const [shareCode, setShareCode] = useState(() => loadState("shareCode", ""));
+  const [familyCodes, setFamilyCodes] = useState(() => loadState("familyCodes", []));
+  const [familyData, setFamilyData] = useState({});
+  const [familyInput, setFamilyInput] = useState("");
+  const [familyError, setFamilyError] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  useEffect(() => { saveState("shareCode", shareCode); }, [shareCode]);
+  useEffect(() => { saveState("familyCodes", familyCodes); }, [familyCodes]);
+  const createShareCode = async () => {
+    if (shareBusy) return;
+    setShareBusy(true); setFamilyError("");
+    try {
+      if (!supabase || !(await ensureDeviceAuth())) { setFamilyError("Not connected — try again online."); return; }
+      const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L confusables
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let code = "";
+        for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+        const { error } = await supabase.from("share_links").insert({
+          code: code, device_id: DEVICE_ID, display_name: profile.name || "Athlete",
+        });
+        if (!error) { setShareCode(code); return; }
+        if (attempt === 1) setFamilyError(error.message || "Could not create code");
+      }
+    } catch (e) { setFamilyError(e.message || "Could not create code"); }
+    finally { setShareBusy(false); }
+  };
+  const stopSharing = async () => {
+    if (shareBusy) return;
+    setShareBusy(true);
+    try {
+      if (supabase && (await ensureDeviceAuth())) {
+        await supabase.from("share_links").delete().eq("code", shareCode);
+      }
+      setShareCode("");
+    } catch (e) { /* clearing locally still stops new viewers finding fresh data tags */ setShareCode(""); }
+    finally { setShareBusy(false); }
+  };
+  const fetchFamilySummary = async (code) => {
+    const { data, error } = await supabase.rpc("sh90_family_summary", { p_code: code });
+    if (error) throw new Error(error.message);
+    return data; // null = unknown code
+  };
+  const loadFamily = async () => {
+    if (!supabase || !(await ensureDeviceAuth()) || familyCodes.length === 0) return;
+    const next = {};
+    for (const fc of familyCodes) {
+      try { next[fc.code] = await fetchFamilySummary(fc.code); } catch (e) { next[fc.code] = undefined; }
+    }
+    setFamilyData(next);
+  };
+  useEffect(() => { if (meSubPage === "family") loadFamily(); }, [meSubPage]);
+  const addFamilyCode = async () => {
+    const code = familyInput.trim().toUpperCase();
+    if (!code) return;
+    setFamilyError("");
+    try {
+      if (!supabase || !(await ensureDeviceAuth())) { setFamilyError("Not connected — try again online."); return; }
+      const data = await fetchFamilySummary(code);
+      if (!data) { setFamilyError("Code not found — check it and try again."); return; }
+      setFamilyCodes(prev => [...prev.filter(c => c.code !== code), { code: code, name: data.name || "Athlete" }]);
+      setFamilyData(prev => ({ ...prev, [code]: data }));
+      setFamilyInput("");
+    } catch (e) { setFamilyError(e.message || "Could not check the code"); }
+  };
+
   const submitTicket = async () => {
     const subject = ticketForm.subject.trim(), body = ticketForm.body.trim();
     if (subject.length < 3) { setTicketsError("Subject must be at least 3 characters."); return; }
@@ -1593,6 +1881,10 @@ function SuperhumanApp() {
   const [weightLog, setWeightLog] = useState(() => loadState("weightLog", {}));
   const [weightInput, setWeightInput] = useState("");
   const [profileWeightInput, setProfileWeightInput] = useState(""); // Me → Personal Info logger (teen programs)
+  // Chores habit: per-day addable checklist (local-only detail; the habit itself syncs as h10)
+  const [choreLists, setChoreLists] = useState(() => loadState("choreLists", {}));
+  const [choreInput, setChoreInput] = useState("");
+  useEffect(() => { saveState("choreLists", choreLists); }, [choreLists]);
   const [weightLogAnim, setWeightLogAnim] = useState(false);
 
   // ── Date Tracking ──
@@ -3571,6 +3863,19 @@ function SuperhumanApp() {
                         </div>
                       )}
 
+                      {/* Form video: curated verified YouTube tutorial, search fallback */}
+                      <a href={getExerciseVideoUrl(currentDisplay)} target="_blank" rel="noopener noreferrer"
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, marginTop: 10,
+                          padding: "8px 12px", borderRadius: 10, textDecoration: "none",
+                          background: t.cardAlt, border: `1px solid ${t.border}`,
+                          color: t.text, fontSize: fs(12), fontWeight: 500,
+                        }}>
+                        <span style={{ fontSize: fs(14) }}>📺</span>
+                        <span>How to do it — watch the form video</span>
+                        <span style={{ marginLeft: "auto", color: t.textDim, fontSize: fs(11) }}>↗</span>
+                      </a>
+
                       {/* Progression suggestion from the last log (double progression) */}
                       {(() => {
                         const tip = getProgressionTip(currentDisplay, ex);
@@ -4440,7 +4745,72 @@ function SuperhumanApp() {
                         </div>
                       )}
 
-                      {/* Notes area (all habits) */}
+                      {/* Chores (idx 10): an addable checklist instead of a note box */}
+                      {idx === 10 ? (
+                        <div>
+                          <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 6, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
+                            TODAY'S CHORES
+                          </div>
+                          {(choreLists[selectedDate] || []).map((c, ci) => (
+                            <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                              <button onClick={() => {
+                                  setChoreLists(prev => {
+                                    const list = [...(prev[selectedDate] || [])];
+                                    list[ci] = { ...list[ci], done: !list[ci].done };
+                                    const next = { ...prev, [selectedDate]: list };
+                                    toggleHabit(10, list.length > 0 && list.every(x => x.done));
+                                    return next;
+                                  });
+                                }}
+                                style={{
+                                  width: 26, height: 26, borderRadius: 7, border: "none", flexShrink: 0,
+                                  background: c.done ? t.success : t.cardAlt, color: c.done ? "#fff" : t.textMuted,
+                                  cursor: "pointer", fontSize: fs(12), display: "flex", alignItems: "center", justifyContent: "center",
+                                }}>✓</button>
+                              <span style={{
+                                flex: 1, fontSize: fs(13),
+                                textDecoration: c.done ? "line-through" : "none",
+                                color: c.done ? t.textDim : t.text,
+                              }}>{c.text}</span>
+                              <button onClick={() => {
+                                  setChoreLists(prev => {
+                                    const list = (prev[selectedDate] || []).filter((_, i2) => i2 !== ci);
+                                    const next = { ...prev, [selectedDate]: list };
+                                    if (list.length > 0) toggleHabit(10, list.every(x => x.done));
+                                    return next;
+                                  });
+                                }}
+                                style={{ border: "none", background: "transparent", color: t.textMuted, cursor: "pointer", fontSize: fs(12) }}>✕</button>
+                            </div>
+                          ))}
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <input type="text" placeholder="Add a chore…" value={choreInput}
+                              onChange={e => setChoreInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter" && choreInput.trim()) {
+                                  setChoreLists(prev => ({ ...prev, [selectedDate]: [...(prev[selectedDate] || []), { text: choreInput.trim().slice(0, 100), done: false }] }));
+                                  setChoreInput("");
+                                }
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              style={{
+                                flex: 1, padding: "9px 12px", borderRadius: 10,
+                                border: `1px solid ${t.border}`, background: t.cardAlt,
+                                color: t.text, fontSize: fs(13), fontFamily: "inherit", outline: "none",
+                              }} />
+                            <button onClick={() => {
+                                if (!choreInput.trim()) return;
+                                setChoreLists(prev => ({ ...prev, [selectedDate]: [...(prev[selectedDate] || []), { text: choreInput.trim().slice(0, 100), done: false }] }));
+                                setChoreInput("");
+                              }}
+                              style={{
+                                padding: "9px 16px", borderRadius: 10, border: "none",
+                                background: t.accent, color: "#fff", fontSize: fs(13), fontWeight: 600,
+                                cursor: "pointer", fontFamily: "inherit",
+                              }}>Add</button>
+                          </div>
+                        </div>
+                      ) : (
                       <div>
                         <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}>
                           {isWorkout ? "WORKOUT NOTES" : isSteps ? "STEP NOTES" : "NOTES"}
@@ -4465,6 +4835,7 @@ function SuperhumanApp() {
                           onClick={e => e.stopPropagation()}
                         />
                       </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4886,6 +5257,110 @@ function SuperhumanApp() {
         {tab === "profile" && (
           <div style={{ padding: "16px 16px 0", overflowX: "hidden" }}>
 
+            {meSubPage === "family" && (<>
+            {/* ── Family / coach view: follow shared progress by code ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Family</div>
+              <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+                Enter a share code from someone's Me → Share with Coach to see their week. You only see summaries — workouts and habit counts, never their logs.
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: familyError ? 8 : 0 }}>
+                <input type="text" placeholder="Share code (e.g. K7KM2Q)" value={familyInput}
+                  onChange={e => setFamilyInput(e.target.value.toUpperCase())}
+                  style={{
+                    flex: 1, padding: "10px 12px", borderRadius: 10, textTransform: "uppercase",
+                    border: `1px solid ${t.border}`, background: t.cardAlt,
+                    color: t.text, fontSize: fs(14), fontFamily: "'DM Mono', monospace", outline: "none",
+                  }} />
+                <button onClick={addFamilyCode} style={{
+                  padding: "10px 18px", borderRadius: 10, border: "none",
+                  background: t.accent, color: "#fff", fontSize: fs(13), fontWeight: 600,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>Add</button>
+              </div>
+              {familyError && <div style={{ fontSize: fs(11), color: t.danger }}>{familyError}</div>}
+            </div>
+            {familyCodes.map(fc => {
+              const d = familyData[fc.code];
+              return (
+                <div key={fc.code} style={{
+                  background: t.card, borderRadius: 16, padding: 18, marginBottom: 10,
+                  border: `1px solid ${t.border}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ fontSize: fs(15), fontWeight: 700 }}>{fc.name}</div>
+                    <button onClick={() => { setFamilyCodes(prev => prev.filter(c => c.code !== fc.code)); }}
+                      style={{ border: "none", background: "transparent", color: t.textMuted, fontSize: fs(11), cursor: "pointer", fontFamily: "inherit" }}>
+                      Remove
+                    </button>
+                  </div>
+                  {d === undefined && <div style={{ fontSize: fs(12), color: t.textDim }}>Loading…</div>}
+                  {d === null && <div style={{ fontSize: fs(12), color: t.warning }}>Sharing was turned off for this code.</div>}
+                  {d && (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                        <div style={{ background: t.cardAlt, borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: fs(10), color: t.textDim }}>WORKOUTS THIS WEEK</div>
+                          <div style={{ fontSize: fs(20), fontWeight: 700, color: t.accent }}>{d.workoutsThisWeek || 0}</div>
+                        </div>
+                        <div style={{ background: t.cardAlt, borderRadius: 10, padding: "10px 12px" }}>
+                          <div style={{ fontSize: fs(10), color: t.textDim }}>HABITS TODAY</div>
+                          <div style={{ fontSize: fs(20), fontWeight: 700, color: t.success }}>{d.habitsToday || 0}</div>
+                        </div>
+                      </div>
+                      {(d.weekWorkouts || []).length > 0 && (
+                        <div style={{ fontSize: fs(11), color: t.textDim, lineHeight: 1.6 }}>
+                          {(d.weekWorkouts || []).map((w, i) => (
+                            <div key={i}>✅ {new Date(w.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" })} — {w.label}</div>
+                          ))}
+                        </div>
+                      )}
+                      {d.lastActive && <div style={{ fontSize: fs(10), color: t.textMuted, marginTop: 8 }}>Last active {d.lastActive}</div>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            </>)}
+            {meSubPage === "share" && (<>
+            {/* ── Share with Coach: revocable read-only summary sharing ── */}
+            <div style={{
+              background: t.card, borderRadius: 16, padding: 20, marginBottom: 12,
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ fontSize: fs(16), fontWeight: 600, marginBottom: 4 }}>Share with Coach</div>
+              <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+                Sharing lets someone with your code see a weekly summary: workouts completed and how many habits you hit. They never see your logs, weights, notes, or chats. Turn it off any time.
+              </div>
+              {shareCode ? (
+                <>
+                  <div style={{
+                    textAlign: "center", padding: "18px 0", borderRadius: 12, background: t.accentGlow,
+                    fontSize: fs(30), fontWeight: 800, letterSpacing: 6, color: t.accent,
+                    fontFamily: "'DM Mono', monospace", marginBottom: 10,
+                  }}>{shareCode}</div>
+                  <div style={{ fontSize: fs(11), color: t.textDim, textAlign: "center", marginBottom: 12 }}>
+                    Have your coach enter this code in Me → Family.
+                  </div>
+                  <button onClick={stopSharing} disabled={shareBusy} style={{
+                    width: "100%", padding: "12px", borderRadius: 10, border: `1px solid ${t.danger}40`,
+                    background: t.danger + "14", color: t.danger, fontSize: fs(13), fontWeight: 600,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>Stop sharing</button>
+                </>
+              ) : (
+                <button onClick={createShareCode} disabled={shareBusy} style={{
+                  width: "100%", padding: "12px", borderRadius: 10, border: "none",
+                  background: t.accent, color: "#fff", fontSize: fs(13), fontWeight: 600,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>{shareBusy ? "Creating…" : "Create my share code"}</button>
+              )}
+              {familyError && meSubPage === "share" && <div style={{ fontSize: fs(11), color: t.danger, marginTop: 8 }}>{familyError}</div>}
+            </div>
+            </>)}
             {meSubPage === "profile" && (<>
             {/* Weight tracking for teen programs — on demand, deliberately not a
                 daily habit and not on the home page */}
@@ -5029,6 +5504,8 @@ function SuperhumanApp() {
                 { key: "mode", icon: "🏋️", label: "Workout Mode", sub: workoutMode === "gym" ? "Gym" : workoutMode === "home" ? "Home" : "Bodyweight" },
                 { key: "tickets", icon: "🛟", label: "Support & Tickets", sub: (() => { const n = (tickets || []).filter(tk => !["resolved", "closed"].includes(tk.status)).length; return n > 0 ? `${n} open` : "All clear"; })() },
                 { key: "profile", icon: "👤", label: "Personal Info", sub: profile.name || "Set up your profile" },
+                { key: "family", icon: "👀", label: "Family", sub: familyCodes.length > 0 ? `Following ${familyCodes.length}` : "Follow someone's progress" },
+                { key: "share", icon: "🔗", label: "Share with Coach", sub: shareCode ? `Sharing · ${shareCode}` : "Off" },
                 { key: "appearance", icon: "🎨", label: "Appearance", sub: THEMES[theme].name },
                 { key: "food", icon: "🍽️", label: "Food Tracker", sub: `${calorieGoal} cal goal` },
                 { key: "data", icon: "💾", label: "Data", sub: "Export · Reset" },
@@ -5839,7 +6316,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.22';
+    var APP_VERSION = 'v3.23';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
