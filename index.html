@@ -34,6 +34,9 @@
     input[type=number] { -moz-appearance: textfield; }
     textarea { font-family: 'DM Sans', sans-serif; }
     .safe-top { padding-top: 44px; padding-top: env(safe-area-inset-top, 44px); }
+    /* 100vh undershoots the real screen in iOS standalone mode, leaving a
+       body-colored bar under the app — dvh tracks the true viewport */
+    .app-shell { height: 100vh; height: 100dvh; }
   </style>
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -2054,6 +2057,15 @@ function SuperhumanApp() {
     if (routine === "bufftxn" && THEMES.texans) setTheme("texans");
   }, [routine]);
 
+  // Paint the page itself in the theme color — body is white by default, and
+  // any viewport area the app shell doesn't cover (iOS safe areas, overscroll
+  // rubber-banding) shows it as a white bar
+  useEffect(() => {
+    const bg = THEMES[theme]?.bg || "#0a0a0f";
+    document.body.style.background = bg;
+    document.documentElement.style.background = bg;
+  }, [theme]);
+
   const roundStartObj = new Date(rounds.startDate + "T12:00:00");
   const programDay = Math.floor((selectedDateObj - roundStartObj) / (1000 * 60 * 60 * 24)) + 1;
   // Sessions completed in the current cycle (any routine)
@@ -2652,9 +2664,9 @@ function SuperhumanApp() {
   };
 
   return (
-    <div style={{
+    <div className="app-shell" style={{
       fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
-      background: t.bg, color: t.text, height: "100vh",
+      background: t.bg, color: t.text,
       maxWidth: 430, margin: "0 auto", position: "relative",
       display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
@@ -5743,6 +5755,7 @@ function SuperhumanApp() {
       <div style={{
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 430, padding: "16px 16px 20px",
+        paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))",
         background: `linear-gradient(transparent, ${t.bg} 30%)`, zIndex: 50,
       }}>
         <div style={{
@@ -5790,7 +5803,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.16';
+    var APP_VERSION = 'v3.17';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
