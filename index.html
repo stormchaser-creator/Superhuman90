@@ -689,7 +689,7 @@
         if (restored.foodLog) saveState("foodLog", restored.foodLog);
         if (restored.rounds && restored.rounds.current) saveState("rounds", restored.rounds);
 
-        localStorage.setItem("sh90_restore_done", "1");
+        localStorage.setItem("sh90_restore_done2", "1");
         window.__sh90_didCloudRestore = true;
         console.log("SH90: Restored from cloud");
         return restored;
@@ -710,21 +710,22 @@
         // Backfill the restore-done flag for established devices with real data
         // (before this flag existed, presence of sh90_profile gated restore — but a
         // failed first restore also wrote sh90_profile, permanently disabling retry)
-        if (!localStorage.getItem("sh90_restore_done")) {
+        if (!localStorage.getItem("sh90_restore_done2")) {
           try {
+            // Only real workout history skips the (v3.26 one-time) re-restore —
+            // a device with sessions has everything synced up already; a fresh
+            // or sparse install should pull the cloud copy down
             var _sl = JSON.parse(localStorage.getItem("sh90_sessionLog") || "{}");
-            var _hl = JSON.parse(localStorage.getItem("sh90_habitLog") || "{}");
-            var _pf = JSON.parse(localStorage.getItem("sh90_profile") || "{}");
-            if (Object.keys(_sl).length > 0 || Object.keys(_hl).length > 0 || (_pf && _pf.name)) {
-              localStorage.setItem("sh90_restore_done", "1");
+            if (Object.keys(_sl).length > 0) {
+              localStorage.setItem("sh90_restore_done2", "1");
             }
           } catch (e2) {}
         }
         // Restore until it either succeeds or the cloud confirms it has nothing —
         // a transient failure (offline first launch) retries on the next launch
-        if (!localStorage.getItem("sh90_restore_done")) {
+        if (!localStorage.getItem("sh90_restore_done2")) {
           var data = await restoreFromCloud();
-          if (data && data.empty) localStorage.setItem("sh90_restore_done", "1");
+          if (data && data.empty) localStorage.setItem("sh90_restore_done2", "1");
         }
       } catch(e) { console.warn("SH90: Pre-render restore error:", e); }
       window.__sh90_ready = true;
@@ -1939,9 +1940,9 @@ function SuperhumanApp() {
   const [cloudLoaded, setCloudLoaded] = useState(false);
   useEffect(() => {
     if (typeof window.__sh90_restoreFromCloud !== "function") return;
-    if (localStorage.getItem("sh90_restore_done")) { setCloudLoaded(true); return; }
+    if (localStorage.getItem("sh90_restore_done2")) { setCloudLoaded(true); return; }
     window.__sh90_restoreFromCloud().then(function(data) {
-      if (data && data.empty) localStorage.setItem("sh90_restore_done", "1");
+      if (data && data.empty) localStorage.setItem("sh90_restore_done2", "1");
       if (!data || data.empty) { setCloudLoaded(true); return; }
       // Hydrate all React state from restored cloud data
       if (data.profile) setProfile(data.profile);
@@ -6322,7 +6323,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.25';
+    var APP_VERSION = 'v3.26';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
