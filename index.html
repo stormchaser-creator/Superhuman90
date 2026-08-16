@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="SH90">
   <meta name="theme-color" content="#0ea5e9">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://i.ytimg.com; connect-src 'self' https://xwhotgkmlbqcyjpdhlbt.supabase.co https://generativelanguage.googleapis.com; manifest-src 'self';">
-  <title>Superhuman90</title>
+  <title>Superhuman</title>
 
   <!-- PWA Manifest + Icons -->
   <link rel="manifest" href="manifest.json">
@@ -1774,10 +1774,9 @@ function SuperhumanApp() {
     monday.setDate(monday.getDate() + direction * 7);
     const targetMonday = toLocalDateStr(monday);
     if (direction > 0) {
-      // Forward: block only if entire target week is in the future
-      if (targetMonday > todayStr) return;
-      // Land on today if it falls within the target week, otherwise Monday
-      setSelectedDate(todayStr >= targetMonday ? todayStr : targetMonday);
+      // Forward: future weeks allowed (look ahead at the schedule); land on
+      // today when it falls within the target week, otherwise Monday
+      setSelectedDate(todayStr >= targetMonday && todayStr <= toLocalDateStr(new Date(monday.getTime() + 6 * 86400000)) ? todayStr : targetMonday);
     } else {
       // Backward: go to the same weekday in the previous week, or Monday
       setSelectedDate(targetMonday);
@@ -2678,7 +2677,7 @@ function SuperhumanApp() {
         }}>
           <div>
             <div style={{ fontSize: fs(11), fontWeight: 500, color: t.accent, letterSpacing: 2, textTransform: "uppercase", fontFamily: "'DM Mono', monospace" }}>
-              SUPERHUMAN 90
+              SUPERHUMAN
             </div>
             <div style={{ fontSize: fs(13), color: t.textDim, marginTop: 2 }}>
               {headerSub}
@@ -2839,7 +2838,6 @@ function SuperhumanApp() {
               width: 32, height: 32, borderRadius: 8, border: `1px solid ${t.border}`,
               background: t.card, color: t.text, cursor: "pointer", fontSize: fs(14),
               display: "flex", alignItems: "center", justifyContent: "center",
-              opacity: (() => { const nextMon = new Date(weekDays[0] + "T12:00:00"); nextMon.setDate(nextMon.getDate() + 7); return toLocalDateStr(nextMon) <= todayStr; })() ? 1 : 0.3,
             }}>▸</button>
         </div>
 
@@ -5803,7 +5801,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.18';
+    var APP_VERSION = 'v3.19';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
