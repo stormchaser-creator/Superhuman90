@@ -2066,6 +2066,38 @@ function SuperhumanApp() {
     document.documentElement.style.background = bg;
   }, [theme]);
 
+  // One-shot layout probe per version per device: the owner reports the bottom
+  // bar floating above the screen edge on his iPhone, which desktop previews
+  // can't reproduce — measure the real viewport/nav geometry and report it via
+  // telemetry (area "layout", informational — NOT an error to fix)
+  useEffect(() => {
+    const key = "sh90_layoutProbe_" + APP_VERSION;
+    if (localStorage.getItem(key)) return;
+    const tmr = setTimeout(() => {
+      try {
+        localStorage.setItem(key, "1");
+        const nav = document.getElementById("sh90-nav");
+        const shell = document.querySelector(".app-shell");
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:fixed;bottom:0;left:0;width:1px;visibility:hidden;height:env(safe-area-inset-bottom,0px)";
+        document.body.appendChild(probe);
+        const safeB = probe.getBoundingClientRect().height;
+        probe.remove();
+        reportAppError("layout", "layout probe (informational, not an error)", {
+          innerH: window.innerHeight, outerH: window.outerHeight,
+          screenH: window.screen.height, screenW: window.screen.width,
+          dpr: window.devicePixelRatio, standalone: !!navigator.standalone,
+          navBottom: nav ? Math.round(nav.getBoundingClientRect().bottom) : null,
+          navBottomGap: nav ? Math.round(window.innerHeight - nav.getBoundingClientRect().bottom) : null,
+          shellH: shell ? Math.round(shell.getBoundingClientRect().height) : null,
+          safeAreaBottom: safeB,
+          visualVpH: window.visualViewport ? Math.round(window.visualViewport.height) : null,
+        });
+      } catch (e) { /* never break the app for diagnostics */ }
+    }, 4000);
+    return () => clearTimeout(tmr);
+  }, []);
+
   const roundStartObj = new Date(rounds.startDate + "T12:00:00");
   const programDay = Math.floor((selectedDateObj - roundStartObj) / (1000 * 60 * 60 * 24)) + 1;
   // Sessions completed in the current cycle (any routine)
@@ -5751,12 +5783,9 @@ function SuperhumanApp() {
       </div>
 
       {/* ── Bottom Navigation ── */}
-      <div style={{
+      <div id="sh90-nav" style={{
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 430, padding: "16px 16px 20px",
-        // Hug the bottom: clear the home indicator by a hair, don't stack
-        // that clearance on top of the base padding (that floats the bar)
-        paddingBottom: "max(14px, calc(4px + env(safe-area-inset-bottom, 0px)))",
         background: `linear-gradient(transparent, ${t.bg} 30%)`, zIndex: 50,
       }}>
         <div style={{
@@ -5804,7 +5833,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.20';
+    var APP_VERSION = 'v3.21';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
