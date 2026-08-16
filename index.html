@@ -135,6 +135,26 @@
     };
     const DEVICE_ID = getDeviceId();
 
+    // One-tap family setup link: sh90.netlify.app/#gkey=<gemini key>&routine=bufftxn
+    // Runs before React mounts so the state initializers see the values. Uses the
+    // URL FRAGMENT (never sent to any server or access log, unlike ?query params);
+    // stripped from the address bar immediately after applying.
+    (function() {
+      try {
+        if (!window.location.hash || window.location.hash.length < 2) return;
+        var hp = new URLSearchParams(window.location.hash.slice(1));
+        var gkey = hp.get("gkey");
+        var rt = hp.get("routine");
+        if (gkey && /^AIza[0-9A-Za-z_\-]{20,60}$/.test(gkey)) {
+          localStorage.setItem("sh90_calorieApiKey", JSON.stringify(gkey));
+        }
+        if (rt && /^[a-z0-9]{2,20}$/.test(rt)) {
+          localStorage.setItem("sh90_routine", JSON.stringify(rt)); // validated against ROUTINES by the state initializer
+        }
+        if (gkey || rt) window.history.replaceState({}, "", window.location.pathname);
+      } catch (e) { /* malformed setup link — ignore */ }
+    })();
+
     // ── Anonymous auth + device claim ──
     // Each device signs in anonymously once (session persists in localStorage) and
     // claims its device_id server-side: sh90_claim_device() stamps user_id = auth.uid()
@@ -1761,6 +1781,18 @@ function SuperhumanApp() {
   const [shareBusy, setShareBusy] = useState(false);
   useEffect(() => { saveState("shareCode", shareCode); }, [shareCode]);
   useEffect(() => { saveState("familyCodes", familyCodes); }, [familyCodes]);
+  // Keep the sharer's display name fresh on their share link (parents pick
+  // kids apart by name in the Family view)
+  useEffect(() => {
+    if (!shareCode || !supabase || !profile.name) return;
+    (async () => {
+      try {
+        if (await ensureDeviceAuth()) {
+          await supabase.from("share_links").update({ display_name: profile.name }).eq("code", shareCode);
+        }
+      } catch (e) { /* retried next launch */ }
+    })();
+  }, [profile.name, shareCode]);
   const createShareCode = async () => {
     if (shareBusy) return;
     setShareBusy(true); setFamilyError("");
@@ -5299,7 +5331,7 @@ function SuperhumanApp() {
                   border: `1px solid ${t.border}`,
                 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ fontSize: fs(15), fontWeight: 700 }}>{fc.name}</div>
+                    <div style={{ fontSize: fs(15), fontWeight: 700 }}>{(familyData[fc.code] && familyData[fc.code].name) || fc.name}</div>
                     <button onClick={() => { setFamilyCodes(prev => prev.filter(c => c.code !== fc.code)); }}
                       style={{ border: "none", background: "transparent", color: t.textMuted, fontSize: fs(11), cursor: "pointer", fontFamily: "inherit" }}>
                       Remove
@@ -5351,7 +5383,7 @@ function SuperhumanApp() {
                     fontFamily: "'DM Mono', monospace", marginBottom: 10,
                   }}>{shareCode}</div>
                   <div style={{ fontSize: fs(11), color: t.textDim, textAlign: "center", marginBottom: 12 }}>
-                    Have your coach enter this code in Me → Family.
+                    Sharing as <b style={{ color: t.text }}>{profile.name || "Athlete"}</b> — your coach enters this code in Me → Family.
                   </div>
                   <button onClick={stopSharing} disabled={shareBusy} style={{
                     width: "100%", padding: "12px", borderRadius: 10, border: `1px solid ${t.danger}40`,
@@ -5360,11 +5392,24 @@ function SuperhumanApp() {
                   }}>Stop sharing</button>
                 </>
               ) : (
-                <button onClick={createShareCode} disabled={shareBusy} style={{
-                  width: "100%", padding: "12px", borderRadius: 10, border: "none",
-                  background: t.accent, color: "#fff", fontSize: fs(13), fontWeight: 600,
-                  cursor: "pointer", fontFamily: "inherit",
-                }}>{shareBusy ? "Creating…" : "Create my share code"}</button>
+                <>
+                  {/* The code carries a name — required, so the coach knows whose card is whose */}
+                  <div style={{ fontSize: fs(11), color: t.textDim, marginBottom: 6 }}>Your first name (shows on your coach's screen):</div>
+                  <input type="text" placeholder="e.g. Marcus" value={profile.name}
+                    onChange={e => setProfile(prev => ({ ...prev, name: e.target.value.slice(0, 40) }))}
+                    style={{
+                      width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+                      border: `1px solid ${t.border}`, background: t.cardAlt,
+                      color: t.text, fontSize: fs(14), fontFamily: "inherit", outline: "none",
+                    }} />
+                  <button onClick={createShareCode} disabled={shareBusy || !profile.name.trim()} style={{
+                    width: "100%", padding: "12px", borderRadius: 10, border: "none",
+                    background: profile.name.trim() ? t.accent : t.cardAlt,
+                    color: profile.name.trim() ? "#fff" : t.textMuted,
+                    fontSize: fs(13), fontWeight: 600,
+                    cursor: profile.name.trim() ? "pointer" : "default", fontFamily: "inherit",
+                  }}>{shareBusy ? "Creating…" : "Create my share code"}</button>
+                </>
               )}
               {familyError && meSubPage === "share" && <div style={{ fontSize: fs(11), color: t.danger, marginTop: 8 }}>{familyError}</div>}
             </div>
@@ -6323,7 +6368,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.26';
+    var APP_VERSION = 'v3.27';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
