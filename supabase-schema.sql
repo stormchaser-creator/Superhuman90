@@ -55,8 +55,8 @@ CREATE INDEX IF NOT EXISTS idx_sh90_messages_ticket ON support_messages (ticket_
 
 CREATE TABLE IF NOT EXISTS weight_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), user_id UUID DEFAULT auth.uid(), date DATE NOT NULL, weight DECIMAL NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
 
-CREATE TABLE IF NOT EXISTS habit_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), user_id UUID DEFAULT auth.uid(), date DATE NOT NULL, h0 BOOLEAN DEFAULT false, h1 BOOLEAN DEFAULT false, h2 BOOLEAN DEFAULT false, h3 BOOLEAN DEFAULT false, h4 BOOLEAN DEFAULT false, h5 BOOLEAN DEFAULT false, h6 BOOLEAN DEFAULT false, h7 BOOLEAN DEFAULT false, h8 BOOLEAN DEFAULT false, h9 BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
--- h8 (Studying) + h9 (Sleep 9h+) added 2026-08-15 for the Buff TXN teen habit set (APPLIED to live DB)
+CREATE TABLE IF NOT EXISTS habit_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), user_id UUID DEFAULT auth.uid(), date DATE NOT NULL, h0 BOOLEAN DEFAULT false, h1 BOOLEAN DEFAULT false, h2 BOOLEAN DEFAULT false, h3 BOOLEAN DEFAULT false, h4 BOOLEAN DEFAULT false, h5 BOOLEAN DEFAULT false, h6 BOOLEAN DEFAULT false, h7 BOOLEAN DEFAULT false, h8 BOOLEAN DEFAULT false, h9 BOOLEAN DEFAULT false, h10 BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date));
+-- h8 (Studying) + h9 (Sleep 9h+) + h10 (Chores) added 2026-08-15 for the Buff TXN teen habit set (APPLIED to live DB)
 
 CREATE TABLE IF NOT EXISTS habit_notes (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id), user_id UUID DEFAULT auth.uid(), date DATE NOT NULL, habit_index INT NOT NULL, note TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(device_id, date, habit_index));
 
