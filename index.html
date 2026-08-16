@@ -2377,6 +2377,8 @@ function SuperhumanApp() {
         probe.style.cssText = "position:fixed;bottom:0;left:0;width:1px;visibility:hidden;height:env(safe-area-inset-bottom,0px)";
         document.body.appendChild(probe);
         const safeB = probe.getBoundingClientRect().height;
+        probe.style.height = "env(safe-area-inset-top,0px)";
+        const safeT = probe.getBoundingClientRect().height;
         probe.remove();
         reportAppError("layout", "layout probe (informational, not an error)", {
           innerH: window.innerHeight, outerH: window.outerHeight,
@@ -2386,6 +2388,9 @@ function SuperhumanApp() {
           navBottomGap: nav ? Math.round(window.innerHeight - nav.getBoundingClientRect().bottom) : null,
           shellH: shell ? Math.round(shell.getBoundingClientRect().height) : null,
           safeAreaBottom: safeB,
+          safeAreaTop: safeT,
+          vvOffsetTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : null,
+          vvPageTop: window.visualViewport ? Math.round(window.visualViewport.pageTop) : null,
           visualVpH: window.visualViewport ? Math.round(window.visualViewport.height) : null,
         });
       } catch (e) { /* never break the app for diagnostics */ }
@@ -6316,7 +6321,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.23';
+    var APP_VERSION = 'v3.24';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
