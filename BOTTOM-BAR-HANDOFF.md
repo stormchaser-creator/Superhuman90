@@ -54,6 +54,15 @@ Owner's phone device_id: `74b14d4e-d5d2-4444-86fd-2f2f8211aa02`.
 | v3.26 | shell `100vh` (standalone), nav in flow (last flex child) | 873 | **932** | **932** | — | — | layout reaches true bottom… |
 | v3.27 | same | 873 | 932 | 932 | — | — | …but still LOOKS 59pt short (screenshot) |
 | v3.28 | same + `.sh90-vfix` root-clip expansion | 873 | 932 | 932 | **873** | **false** | fix never armed (see §5 finding A) |
+| v3.29 | same + vfix re-armed via 250ms poll + vv-resize listeners | 873 | 932 | 932 | **991** | **true** | armed (vvresize @6.5s, bootInnerH 873!) — bar STILL rendered short + iOS oscillated innerH → poll toggled page height → visible FLICKER (owner headache). Verdict: clip is compositor-level, **CSS height games are DEAD** |
+
+**v3.30 (2026-08-17): abandoned the height-jail entirely — adopted CredentialDOMD's shell
+wholesale (§5D option 1).** html/body/#root lost `height:100%; overflow:hidden` (now
+`overflow-x: clip` only — `clip`, not `hidden`, so `position:sticky` still works); shell is
+`min-height:100vh` plain block; the DOCUMENT scrolls; header `position:sticky top:0`; nav
+`position:fixed bottom:0` solid slab with safe-area padding; content bottom-padded
+`calc(96px + env(safe-area-inset-bottom))`; coach tab minHeight now dvh-based; vfix applier
++ CSS deleted. Desktop-verified (boot, scroll, sticky, coach). Awaiting on-device probe.
 
 Constant on every probe: `screenH 932, outerH 932, safeAreaTop 59, safeAreaBottom 34,
 visualViewport.height 873, vvOffsetTop 0, standalone true, dpr 3`.
