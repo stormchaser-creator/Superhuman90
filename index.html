@@ -40,6 +40,11 @@
        so installed apps use 100vh and place the nav in flow at its bottom. */
     .app-shell { height: 100vh; height: -webkit-fill-available; height: 100dvh; }
     .app-shell.standalone { height: 100vh; }
+    /* iOS standalone viewport bug: layout reaches the true screen bottom (100vh)
+       but html/body's overflow clip sits at the broken 59pt-short viewport line
+       and crops the nav's rendering. Expand the clip boundary by the measured
+       shortfall (set at runtime; 0 on healthy devices). */
+    html.sh90-vfix, html.sh90-vfix body, html.sh90-vfix #root { height: calc(100% + var(--sh90-vh-shortfall, 0px)); }
   </style>
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -134,6 +139,28 @@
       return id;
     };
     const DEVICE_ID = getDeviceId();
+
+    // iOS standalone viewport-shortfall fix: measure how much shorter the
+    // reported viewport is than the physical screen and widen the root clip by
+    // exactly that much (see .sh90-vfix CSS). Guarded to portrait standalone;
+    // recomputed on resize/rotation.
+    (function() {
+      var applyVfix = function() {
+        try {
+          var short = navigator.standalone ? Math.max(0, (window.screen.height || 0) - window.innerHeight) : 0;
+          if (short > 0 && short <= 120) {
+            document.documentElement.style.setProperty("--sh90-vh-shortfall", short + "px");
+            document.documentElement.classList.add("sh90-vfix");
+          } else {
+            document.documentElement.style.setProperty("--sh90-vh-shortfall", "0px");
+            document.documentElement.classList.remove("sh90-vfix");
+          }
+        } catch (e) {}
+      };
+      applyVfix();
+      window.addEventListener("resize", applyVfix);
+      window.addEventListener("orientationchange", function() { setTimeout(applyVfix, 300); });
+    })();
 
     // One-tap family setup link: sh90.netlify.app/#gkey=<gemini key>&routine=bufftxn
     // Runs before React mounts so the state initializers see the values. Uses the
@@ -2424,6 +2451,8 @@ function SuperhumanApp() {
           shellH: shell ? Math.round(shell.getBoundingClientRect().height) : null,
           safeAreaBottom: safeB,
           safeAreaTop: safeT,
+          vfix: document.documentElement.classList.contains("sh90-vfix"),
+          bodyH: Math.round(document.body.getBoundingClientRect().height),
           vvOffsetTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : null,
           vvPageTop: window.visualViewport ? Math.round(window.visualViewport.pageTop) : null,
           visualVpH: window.visualViewport ? Math.round(window.visualViewport.height) : null,
@@ -3293,7 +3322,7 @@ function SuperhumanApp() {
         )}
       </div>
       {/* ── Content Area ── */}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", paddingBottom: 24, WebkitOverflowScrolling: "touch" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 24, WebkitOverflowScrolling: "touch" }}>
 
         {/* ═══ WORKOUT TAB ═══ */}
         {tab === "workout" && (
@@ -6368,7 +6397,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.27';
+    var APP_VERSION = 'v3.28';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
