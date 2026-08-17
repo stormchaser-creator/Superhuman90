@@ -22,7 +22,12 @@
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; }
+    /* CredentialDOMD shell: a normally-scrolling document. No height/overflow
+       jail on html/body/#root — iOS clips that jail at its buggy 59pt-short
+       standalone viewport (probes v3.24–v3.29), while a plain scrolling page
+       with a fixed bottom bar renders flush on the same phone. */
+    html, body, #root { margin: 0; padding: 0; overflow-x: hidden; overflow-x: clip; }
+    #root { max-width: 100vw; }
     body { font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
     @keyframes pulse {
       0% { transform: scale(1); }
@@ -34,17 +39,7 @@
     input[type=number] { -moz-appearance: textfield; }
     textarea { font-family: 'DM Sans', sans-serif; }
     .safe-top { padding-top: 44px; padding-top: env(safe-area-inset-top, 44px); }
-    /* Browser tabs: dvh tracks the visible viewport. iOS standalone has a bug
-       where the reported viewport is screen-minus-top-inset (59pt short on
-       Dynamic Island phones) while 100vh still measures the TRUE full screen —
-       so installed apps use 100vh and place the nav in flow at its bottom. */
-    .app-shell { height: 100vh; height: -webkit-fill-available; height: 100dvh; }
-    .app-shell.standalone { height: 100vh; }
-    /* iOS standalone viewport bug: layout reaches the true screen bottom (100vh)
-       but html/body's overflow clip sits at the broken 59pt-short viewport line
-       and crops the nav's rendering. Expand the clip boundary by the measured
-       shortfall (set at runtime; 0 on healthy devices). */
-    html.sh90-vfix, html.sh90-vfix body, html.sh90-vfix #root { height: calc(100% + var(--sh90-vh-shortfall, 0px)); }
+    .app-shell { min-height: 100vh; }
   </style>
 
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -139,48 +134,6 @@
       return id;
     };
     const DEVICE_ID = getDeviceId();
-
-    // iOS standalone viewport-shortfall fix: measure how much shorter the
-    // reported viewport is than the physical screen and widen the root clip by
-    // exactly that much (see .sh90-vfix CSS). Guarded to portrait standalone;
-    // recomputed on resize/rotation.
-    (function() {
-      // Diagnostics for the layout probe: iOS shrinks the standalone viewport
-      // AFTER script eval without firing resize (v3.28 probe: vfix never armed),
-      // so record what innerHeight was at boot and when/what finally armed it.
-      var vlog = { bootInnerH: window.innerHeight, armedAtMs: null, armedBy: null };
-      window.__sh90VfixLog = vlog;
-      var applyVfix = function(src) {
-        try {
-          var short = navigator.standalone ? Math.max(0, (window.screen.height || 0) - window.innerHeight) : 0;
-          if (short > 0 && short <= 120) {
-            document.documentElement.style.setProperty("--sh90-vh-shortfall", short + "px");
-            if (!document.documentElement.classList.contains("sh90-vfix")) {
-              document.documentElement.classList.add("sh90-vfix");
-              vlog.armedAtMs = Math.round(performance.now());
-              vlog.armedBy = src || "?";
-            }
-          } else {
-            document.documentElement.style.setProperty("--sh90-vh-shortfall", "0px");
-            document.documentElement.classList.remove("sh90-vfix");
-          }
-        } catch (e) {}
-      };
-      applyVfix("boot");
-      // No resize event accompanies the late shrink, so poll for the first 6s
-      // (every 250ms; the layout probe reads the result at +4s), then rely on
-      // the event listeners below for rotations and app-switch returns.
-      var tries = 0;
-      var poll = setInterval(function() {
-        applyVfix("poll");
-        if (++tries >= 24) clearInterval(poll);
-      }, 250);
-      window.addEventListener("resize", function() { applyVfix("resize"); });
-      if (window.visualViewport) window.visualViewport.addEventListener("resize", function() { applyVfix("vvresize"); });
-      document.addEventListener("visibilitychange", function() { applyVfix("visibility"); });
-      window.addEventListener("pageshow", function() { applyVfix("pageshow"); });
-      window.addEventListener("orientationchange", function() { setTimeout(function() { applyVfix("orientation"); }, 300); });
-    })();
 
     // One-tap family setup link: sh90.netlify.app/#gkey=<gemini key>&routine=bufftxn
     // Runs before React mounts so the state initializers see the values. Uses the
@@ -2471,9 +2424,9 @@ function SuperhumanApp() {
           shellH: shell ? Math.round(shell.getBoundingClientRect().height) : null,
           safeAreaBottom: safeB,
           safeAreaTop: safeT,
-          vfix: document.documentElement.classList.contains("sh90-vfix"),
-          vfixLog: window.__sh90VfixLog || null,
           bodyH: Math.round(document.body.getBoundingClientRect().height),
+          docScrollH: document.scrollingElement ? document.scrollingElement.scrollHeight : null,
+          docScrollTop: document.scrollingElement ? Math.round(document.scrollingElement.scrollTop) : null,
           vvOffsetTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : null,
           vvPageTop: window.visualViewport ? Math.round(window.visualViewport.pageTop) : null,
           visualVpH: window.visualViewport ? Math.round(window.visualViewport.height) : null,
@@ -3081,14 +3034,13 @@ function SuperhumanApp() {
   };
 
   return (
-    <div className={"app-shell" + (navigator.standalone ? " standalone" : "")} style={{
+    <div className="app-shell" style={{
       fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
       background: t.bg, color: t.text,
       maxWidth: 430, margin: "0 auto", position: "relative",
-      display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
-      {/* ── Header ── */}
-      <div className="safe-top" style={{ background: t.bg }}>
+      {/* ── Header (sticky, like CredentialDOMD's top bar) ── */}
+      <div className="safe-top" style={{ background: t.bg, position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{
           padding: "12px 20px 12px", display: "flex", alignItems: "center",
           justifyContent: "space-between", borderBottom: `1px solid ${t.border}`,
@@ -3342,8 +3294,9 @@ function SuperhumanApp() {
           </button>
         )}
       </div>
-      {/* ── Content Area ── */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 24, WebkitOverflowScrolling: "touch" }}>
+      {/* ── Content Area — the document scrolls (CredentialDOMD pattern);
+           bottom padding clears the fixed nav bar ── */}
+      <div style={{ overflowX: "hidden", paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
 
         {/* ═══ WORKOUT TAB ═══ */}
         {tab === "workout" && (
@@ -5014,7 +4967,7 @@ function SuperhumanApp() {
 
         {/* ═══ COACH TAB ═══ */}
         {tab === "coach" && (
-          <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", minHeight: "100%" }}>
+          <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", minHeight: "calc(100dvh - 230px)" }}>
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: fs(20), fontWeight: 700 }}>AI Coach</div>
               <div style={{ fontSize: fs(12), color: t.textDim, marginTop: 2 }}>
@@ -6365,14 +6318,13 @@ function SuperhumanApp() {
         )}
       </div>
 
-      {/* ── Bottom Navigation — solid slab, IN FLOW as the shell's last flex
-           child. The shell is true-screen-height (100vh in standalone), so the
-           slab's bottom edge is the physical screen bottom — immune to the iOS
-           bug where fixed/bottom:0 stops 59pt short of the screen. ── */}
+      {/* ── Bottom Navigation — fixed solid bar, exactly CredentialDOMD's
+           pattern (its bar renders flush on the owner's phone) ── */}
       <div id="sh90-nav" style={{
-        flexShrink: 0, width: "100%",
+        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+        width: "100%", maxWidth: 430,
         padding: "6px 12px", paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
-        background: t.card, borderTop: `1px solid ${t.border}`, zIndex: 50,
+        background: t.card, borderTop: `1px solid ${t.border}`, zIndex: 100,
       }}>
         <div style={{
           display: "flex", background: "transparent", borderRadius: 16, padding: 4,
@@ -6418,7 +6370,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.29';
+    var APP_VERSION = 'v3.30';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
