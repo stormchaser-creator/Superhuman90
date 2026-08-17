@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8091"],
       "port": 8091
+    },
+    {
+      "name": "sh90-alt",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8092"],
+      "port": 8092
     }
   ]
 }

@@ -145,21 +145,41 @@
     // exactly that much (see .sh90-vfix CSS). Guarded to portrait standalone;
     // recomputed on resize/rotation.
     (function() {
-      var applyVfix = function() {
+      // Diagnostics for the layout probe: iOS shrinks the standalone viewport
+      // AFTER script eval without firing resize (v3.28 probe: vfix never armed),
+      // so record what innerHeight was at boot and when/what finally armed it.
+      var vlog = { bootInnerH: window.innerHeight, armedAtMs: null, armedBy: null };
+      window.__sh90VfixLog = vlog;
+      var applyVfix = function(src) {
         try {
           var short = navigator.standalone ? Math.max(0, (window.screen.height || 0) - window.innerHeight) : 0;
           if (short > 0 && short <= 120) {
             document.documentElement.style.setProperty("--sh90-vh-shortfall", short + "px");
-            document.documentElement.classList.add("sh90-vfix");
+            if (!document.documentElement.classList.contains("sh90-vfix")) {
+              document.documentElement.classList.add("sh90-vfix");
+              vlog.armedAtMs = Math.round(performance.now());
+              vlog.armedBy = src || "?";
+            }
           } else {
             document.documentElement.style.setProperty("--sh90-vh-shortfall", "0px");
             document.documentElement.classList.remove("sh90-vfix");
           }
         } catch (e) {}
       };
-      applyVfix();
-      window.addEventListener("resize", applyVfix);
-      window.addEventListener("orientationchange", function() { setTimeout(applyVfix, 300); });
+      applyVfix("boot");
+      // No resize event accompanies the late shrink, so poll for the first 6s
+      // (every 250ms; the layout probe reads the result at +4s), then rely on
+      // the event listeners below for rotations and app-switch returns.
+      var tries = 0;
+      var poll = setInterval(function() {
+        applyVfix("poll");
+        if (++tries >= 24) clearInterval(poll);
+      }, 250);
+      window.addEventListener("resize", function() { applyVfix("resize"); });
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", function() { applyVfix("vvresize"); });
+      document.addEventListener("visibilitychange", function() { applyVfix("visibility"); });
+      window.addEventListener("pageshow", function() { applyVfix("pageshow"); });
+      window.addEventListener("orientationchange", function() { setTimeout(function() { applyVfix("orientation"); }, 300); });
     })();
 
     // One-tap family setup link: sh90.netlify.app/#gkey=<gemini key>&routine=bufftxn
@@ -2452,6 +2472,7 @@ function SuperhumanApp() {
           safeAreaBottom: safeB,
           safeAreaTop: safeT,
           vfix: document.documentElement.classList.contains("sh90-vfix"),
+          vfixLog: window.__sh90VfixLog || null,
           bodyH: Math.round(document.body.getBoundingClientRect().height),
           vvOffsetTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : null,
           vvPageTop: window.visualViewport ? Math.round(window.visualViewport.pageTop) : null,
@@ -6397,7 +6418,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.28';
+    var APP_VERSION = 'v3.29';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
