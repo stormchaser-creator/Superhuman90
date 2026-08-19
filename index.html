@@ -5909,7 +5909,10 @@ function SuperhumanApp() {
                   }}
                 />
                 <div style={{ fontSize: fs(10), color: t.textDim, marginTop: 4 }}>
-                  Needed for AI food tracking. Get one at aistudio.google.com/apikey
+                  Needed for AI food tracking and the AI coach. The key is free and personal to you —
+                  tap <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+                    style={{ color: t.accent, fontWeight: 600 }}>Google AI Studio</a>, sign in,
+                  press "Create API key", then paste it above. It stays on this device.
                 </div>
               </div>
               <div>
@@ -6370,7 +6373,7 @@ function SuperhumanApp() {
   </script>
   <script>
     // ── App version for cache busting ──
-    var APP_VERSION = 'v3.30';
+    var APP_VERSION = 'v3.31';
 
     // Register service worker — force update on new deploys (CredentialDOMD pattern,
     // hardened): updateViaCache 'none' so the browser never serves a cached sw.js,
