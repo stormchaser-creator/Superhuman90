@@ -183,3 +183,38 @@ putting the TAB CONTENT at the same height Credential does.
 - Page paint: `useEffect` setting `document.body/documentElement.style.background =
   THEMES[theme].card` (search `sh90 layout` comments).
 - Probe: `useEffect` with `sh90_layoutProbe_` key; reports via `reportAppError("layout", …)`.
+
+---
+
+## 9. VERDICT: v3.30 fixed it (recorded 2026-08-28 by nightly maintenance)
+
+The probe data the ledger was waiting on has arrived. `navBottomGap` is the number that
+matters — it is `innerH - navBottom`, i.e. how far the bar's bottom edge sits past the
+usable viewport. Negative = the bar is rendering below the fold (the bug).
+
+| version | screenW | innerH | navBottom | navBottomGap |
+|---|---|---|---|---|
+| v3.21–v3.24 | 430 | 873 | 873 | **0** (pre-regression baseline) |
+| v3.26 | 320 / 402 / 430 | 644 / 812 / 873 | 693 / 874 / 932 | **-49 / -62 / -59** |
+| v3.27 | 402 / 430 | 812 / 873 | 874 / 932 | **-62 / -59** |
+| v3.28 | 402 / 430 | 812 / 873 | 874 / 932 | **-62 / -59** |
+| v3.29 (vfix armed, `armedBy: vvresize`) | 430 | 873 | 932 | **-59** — armed and still wrong |
+| **v3.30** (shell rewrite) | 320 / 402 / 430 | 693 / 874 / 932 | 693 / 874 / 932 | **0 / 0 / 0** |
+| v3.31 | 402 | 874 | 861 | +13 — see note below |
+
+v3.30's CredentialDOMD-style shell (no height/overflow jail on html/body/#root, scrolling
+document, `position: fixed` bar) reaches the true bottom on all three standalone form
+factors — 320pt, 402pt, and 430pt — where every version from v3.26 through v3.29 was short
+by exactly the safe-area-top inset. The v3.29 row is the decisive one: `vfix` armed
+(`armedBy: vvresize`, `bodyH` 991) and the gap was *still* -59, confirming §5A's conclusion
+that no CSS-height approach could work.
+
+The single v3.31 standalone row reads `navBottomGap: +13`, which is **not** a regression:
+that sample was taken mid-scroll (`docScrollTop: 261`) and `vvOffsetTop` is also exactly 13
+— the visual viewport was offset by 13pt at probe time, so the bar was at the layout bottom
+and the delta is pure visual-viewport offset. Positive gaps equal to `vvOffsetTop` are
+measurement artifacts of scroll position; only negative gaps indicate the bug.
+
+**Do not reopen this investigation** unless a fresh standalone probe reports a negative
+`navBottomGap`. If one appears, start from §5A, not from the CSS-height approaches — those
+are already disproven.
